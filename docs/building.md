@@ -56,7 +56,10 @@ is useful for local testing. Both jobs' summary pages show the source commit, th
 and the newest glibc the build needs. Wine is compiled on Ubuntu bionic so that it runs
 on old distros.
 
-Running the workflow again with the same label **replaces** that release.
+Running the workflow again with the same label **replaces** that release while it is
+still a draft. Once it has been published (as a prerelease or full release) the run
+fails at the release step instead, so a live build can't be swapped out by accident;
+pick a new label.
 
 Drafts are visible only to maintainers, on the repository's Releases page.
 
@@ -91,6 +94,8 @@ The steps:
 
 - **"Download bootstraps artifact" fails**: the artifact expired, or Bootstraps CI has
   never succeeded. Run *Bootstraps CI* by hand.
+- **"Release" fails with "already published"**: a published release already has
+  this tag. Run again with a new label.
 - **"Check the label" fails**: the label contains a hyphen or other character that isn't
   allowed.
 - **Compile error in "Build Wine"**: usually a patch that no longer fits the newer Wine.

@@ -24,7 +24,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-22.04
-    timeout-minutes: 240
+    timeout-minutes: 360   # GitHub's maximum; the first run took just over 3 hours
 
     steps:
       - uses: actions/checkout@v4

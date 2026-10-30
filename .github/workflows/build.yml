@@ -192,7 +192,16 @@ jobs:
           notes="Untested build of Wine ${VERSION} from ${IN_WINE_REPO} branch ${IN_WINE_BRANCH}.
           The AppImage, plus a tarball of the same bundled folder for systems without FUSE.
           See docs/building.md for testing and publishing."
-          gh release delete "$tag" --cleanup-tag --yes --repo "$GITHUB_REPOSITORY" || true
+          # Only replace an earlier build with this tag while it is still a draft. A published
+          # release may be what OuDedetai is offering users right now, so never delete it.
+          existing=$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases" \
+                       --jq ".[] | select(.tag_name == \"$tag\") | .draft")
+          case "$existing" in
+            "") ;;
+            true) gh release delete "$tag" --cleanup-tag --yes --repo "$GITHUB_REPOSITORY" ;;
+            *) echo "::error::release $tag is already published; choose a new label (published releases are never replaced)"
+               exit 1 ;;
+          esac
           # A draft: OuDedetai offers the newest prerelease as its beta and the newest full
           # release to everyone, so nothing becomes visible until a maintainer publishes it.
           # OuDedetai downloads the FIRST asset, so the AppImage must be uploaded first.
