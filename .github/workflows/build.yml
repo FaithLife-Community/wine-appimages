@@ -163,8 +163,10 @@ jobs:
 
           # The same AppDir as a plain tarball, for distros that dislike AppImages.
           # Unpack anywhere and run ./<dir>/AppRun (it needs no FUSE and no installation).
-          cp -a appimage/AppDir "$name-bundled"
-          tar -cf - "$name-bundled" | xz -T0 -9 > "out/$name-bundled.tar.xz"
+          # Named "<name>.bundle.tar.xz" so it sorts after "<name>.AppImage": GitHub lists a
+          # release's assets by name, and OuDedetai downloads the first one.
+          cp -a appimage/AppDir "$name.bundle"
+          tar -cf - "$name.bundle" | xz -T0 -9 > "out/$name.bundle.tar.xz"
           ls -l out
 
       - name: Report size and glibc requirement
@@ -207,11 +209,12 @@ jobs:
           esac
           # A draft: OuDedetai offers the newest prerelease as its beta and the newest full
           # release to everyone, so nothing becomes visible until a maintainer publishes it.
-          # OuDedetai downloads the FIRST asset, so the AppImage must be uploaded first.
+          # OuDedetai downloads the FIRST asset. GitHub orders assets by name, not upload
+          # order, which the file names above take care of; the check below confirms it.
           gh release create "$tag" --draft --prerelease --target "$GITHUB_SHA" \
             --title "Wine ${VERSION} AppImage (${IN_LABEL})" --notes "$notes" \
             --repo "$GITHUB_REPOSITORY" out/*.AppImage
-          gh release upload "$tag" out/*-bundled.tar.xz --repo "$GITHUB_REPOSITORY"
+          gh release upload "$tag" out/*.bundle.tar.xz --repo "$GITHUB_REPOSITORY"
           first=$(gh api "repos/$GITHUB_REPOSITORY/releases" --jq ".[] | select(.tag_name == \"$tag\") | .assets[0].name")
           case "$first" in
             *.AppImage) echo "First asset: $first" ;;
