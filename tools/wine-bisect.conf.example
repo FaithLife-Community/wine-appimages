@@ -1,0 +1,34 @@
+# Optional. Everything below is already the default — uncomment only what you change.
+# Save as wine-bisect.conf next to wine-bisect.sh (e.g. in ~/wine-bisect-prefix).
+
+# Dedicated Wine clone used only for bisecting (created by `wine-bisect.sh setup`)
+#WINE_SRC="$HOME/Documents/GitHub/wine-mirror"
+#UPSTREAM_URL="https://gitlab.winehq.org/wine/wine.git"   # or https://github.com/wine-mirror/wine.git
+
+# Speed up the first clone by copying objects from a wine clone you already have.
+# The new clone is dissociated afterwards, so the two repos stay fully independent.
+#REFERENCE_REPO="$HOME/Documents/GitHub/wine"
+
+# Your copied OuDedetai install; the prefix is found at data/wine64_bottle inside it.
+# Defaults to the script's own folder when the script lives in the install.
+#INSTALL_DIR="$HOME/wine-bisect-prefix"
+
+# inplace = Logos runs directly in the bottle (default; no re-indexing).
+# overlay | copy = throwaway copy per run, which makes Logos re-index every time.
+#PREFIX_MODE=inplace
+
+# Build tree, scratch prefix, logs and summary.tsv all go here and nowhere else
+#WORK_DIR="$HOME/.cache/wine-bisect"
+
+# WoW64 build like current upstream. For much faster steps, install ccache and set e.g.:
+#   export CC="ccache gcc" x86_64_CC="ccache x86_64-w64-mingw32-gcc" i386_CC="ccache i686-w64-mingw32-gcc"
+#CONFIGURE_ARGS=(--enable-archs=i386,x86_64 --disable-tests)
+
+#LAUNCH_WAIT=60
+#REQUIRE_WINDOW=1          # needs xdotool
+#WINDOW_REGEX='Logos'
+#RUNS=2                    # a step is bad only if every attempt fails
+#EXTRA_ENV=(WINEDEBUG=-all "WINEDLLOVERRIDES=winemenubuilder.exe=d")
+# Extra env for the wineboot -u prefix update only (no Mono/Gecko install prompts):
+#WINEBOOT_ENV=("WINEDLLOVERRIDES=mscoree=;mshtml=;winemenubuilder.exe=d")
+#USE_XVFB=0                # 1 = keep Logos windows off your desktop
