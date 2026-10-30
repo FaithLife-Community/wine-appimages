@@ -121,7 +121,10 @@ jobs:
   appimage:
     name: Package AppImage and release
     needs: wine
-    runs-on: ubuntu-latest
+    # Pinned: appimage-builder 1.0.3 drives the host's apt, and this job failed within
+    # seconds once ubuntu-latest started moving to Ubuntu 26.04 (October 2026; its apt 3
+    # dropped apt-key). The recipe was proven on 24.04. Revisit when 24.04 is retired.
+    runs-on: ubuntu-24.04
 
     steps:
       - uses: actions/checkout@v4

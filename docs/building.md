@@ -110,7 +110,8 @@ The steps:
    `build/build_wine.sh` with `CUSTOM_SRC_PATH`/`CUSTOM_SRC_BRANCH` set to the inputs.
    This clones the branch and builds it in the chroot with bubblewrap. The tarball is
    passed to the next job as an artifact.
-2. **Package AppImage and release** (`ubuntu-latest`): `appimage-builder` builds an
+2. **Package AppImage and release** (`ubuntu-24.04`, pinned because appimage-builder
+   uses the host's apt): `appimage-builder` builds an
    AppDir from `appimage/recipe.yml` (Ubuntu focal runtime libraries, winetricks, the
    Wine build, and the `wrapper` launcher), `appimagetool` turns it into the AppImage,
    and `gh release create` uploads it to a draft release.
