@@ -1,0 +1,59 @@
+name: Bootstraps CI
+
+# Builds the Ubuntu bionic chroots (32- and 64-bit) that build.yml compiles Wine in,
+# and stores them as the "Bootstraps" workflow artifact. build.yml downloads the
+# artifact from the most recent successful run of this workflow.
+#
+# Artifacts expire after 90 days, so this runs on the 1st of every month: there is
+# always a fresh one, and a failed run leaves two more chances before the previous
+# artifact expires. It can also be started by hand from the Actions tab.
+
+on:
+  schedule:
+    - cron: "17 3 1 * *"   # 03:17 UTC on the 1st of each month
+  workflow_dispatch:
+
+concurrency:
+  group: bootstraps
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: write   # for the keep-alive step below
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 240
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create bootstraps
+        run: |
+          sudo apt update
+          sudo apt install -y debootstrap perl
+          sudo ./build/create_ubuntu_bootstraps.sh
+          cd /opt
+          sudo tar -I "xz -T0 -9" -cpf bootstraps.tar.xz chroots
+          sha256sum bootstraps.tar.xz
+          ls -lh bootstraps.tar.xz
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Bootstraps
+          path: /opt/bootstraps.tar.xz
+          retention-days: 90
+          compression-level: 0   # already xz-compressed
+
+  # GitHub disables scheduled workflows in a repository with no activity for 60 days.
+  # Re-enabling this workflow through the API on every run resets that clock, so the
+  # monthly schedule keeps going even when nobody pushes to the repository.
+  keepalive:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule'
+    steps:
+      - name: Re-enable this workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api -X PUT "repos/${{ github.repository }}/actions/workflows/bootstraps.yml/enable"
