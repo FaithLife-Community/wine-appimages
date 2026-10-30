@@ -1,0 +1,196 @@
+name: Build Wine AppImage
+
+# Builds Wine from a branch of a Wine git repository (by default a patch branch of
+# FaithLife-Community/wine), wraps it into an AppImage plus a plain "bundled" tarball,
+# and publishes both as a prerelease tagged appimage-<label>. A maintainer promotes the
+# release by hand after testing. See docs/building.md.
+#
+# Prerequisite: a successful "Bootstraps CI" run in this repository within the last
+# 90 days (its artifact holds the Ubuntu chroots Wine is compiled in).
+
+on:
+  workflow_dispatch:
+    inputs:
+      wine_repo:
+        description: "Git URL of the Wine source"
+        default: "https://github.com/FaithLife-Community/wine.git"
+        required: true
+      wine_branch:
+        description: "Branch or tag to build (see docs/patches.md)"
+        default: "logos-master"
+        required: true
+      label:
+        description: "Short label for file names and the release tag, no hyphens (e.g. logosc37cb58)"
+        required: true
+      wine_version:
+        description: "Version for the file names; empty = the VERSION of the branch"
+        default: ""
+        required: false
+
+permissions:
+  contents: write   # publish the release
+  actions: read     # download the Bootstraps artifact from another workflow run
+
+concurrency:
+  group: build-${{ inputs.label }}
+  cancel-in-progress: false
+
+jobs:
+  wine:
+    name: Compile Wine
+    runs-on: ubuntu-22.04
+    timeout-minutes: 180
+    outputs:
+      tarball: ${{ steps.build.outputs.tarball }}
+      version: ${{ steps.build.outputs.version }}
+
+    steps:
+      - name: Check the label
+        env:
+          IN_LABEL: ${{ inputs.label }}
+        run: |
+          # OuDedetai splits AppImage file names on hyphens to read the version
+          if ! printf '%s' "$IN_LABEL" | grep -Eq '^[A-Za-z0-9._]+$'; then
+            echo "::error::label must contain only letters, digits, dots and underscores (no hyphens)"
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+
+      - name: Download bootstraps artifact
+        uses: dawidd6/action-download-artifact@v3
+        with:
+          workflow: bootstraps.yml
+          workflow_conclusion: success
+          name: Bootstraps
+          path: /opt/Bootstraps
+
+      - name: Build Wine
+        id: build
+        env:
+          # Inputs are passed through the environment, never interpolated into the script.
+          IN_WINE_REPO: ${{ inputs.wine_repo }}
+          IN_WINE_BRANCH: ${{ inputs.wine_branch }}
+          IN_LABEL: ${{ inputs.label }}
+          IN_WINE_VERSION: ${{ inputs.wine_version }}
+        run: |
+          sudo apt update
+          sudo apt install binutils-mingw-w64-i686 binutils-mingw-w64-x86-64 debootstrap perl git wget xz-utils bubblewrap autoconf
+          sudo tar -C /opt -xpf /opt/Bootstraps/bootstraps.tar.xz
+          export EXPERIMENTAL_WOW64="true"
+          export CUSTOM_SRC_PATH="$IN_WINE_REPO"
+          export CUSTOM_SRC_BRANCH="$IN_WINE_BRANCH"
+          export CUSTOM_BUILD_LABEL="$IN_LABEL"
+          WINE_BRANCH=vanilla ./build/build_wine.sh
+
+          f=$(ls build/wine-*-custom-"$IN_LABEL"-amd64.tar.xz)
+          version=$(basename "$f" | sed -E 's/^wine-(.*)-custom-.*$/\1/')
+          [ -n "$IN_WINE_VERSION" ] && version="$IN_WINE_VERSION"
+          echo "tarball=$(basename "$f")" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "commit=$(git ls-remote "$IN_WINE_REPO" "$IN_WINE_BRANCH" | head -n1 | cut -c1-12)" >> "$GITHUB_OUTPUT"
+          ls -l "$f"; sha256sum "$f"
+
+      - name: Report size and glibc requirement
+        env:
+          TARBALL: build/${{ steps.build.outputs.tarball }}
+          IN_WINE_REPO: ${{ inputs.wine_repo }}
+          IN_WINE_BRANCH: ${{ inputs.wine_branch }}
+          COMMIT: ${{ steps.build.outputs.commit }}
+        run: |
+          d=$(mktemp -d)
+          tar -C "$d" -xf "$TARBALL"
+          w=$(echo "$d"/wine-*)
+          need=$(objdump -T "$w"/bin/wineserver "$w"/lib/wine/x86_64-unix/ntdll.so 2>/dev/null \
+                   | grep -o 'GLIBC_[0-9.]*' | sort -Vu | tail -1)
+          {
+            echo "### $(basename "$TARBALL")"
+            echo "- source: \`$IN_WINE_REPO\` branch \`$IN_WINE_BRANCH\` (\`$COMMIT\`)"
+            echo "- tarball: $(du -h "$TARBALL" | cut -f1), unpacked: $(du -sh "$w" | cut -f1)"
+            echo "- newest glibc symbol needed by wineserver/ntdll.so: ${need:-unknown}"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wine-tarball
+          path: build/${{ steps.build.outputs.tarball }}
+          compression-level: 0   # already xz-compressed
+          retention-days: 30
+
+  appimage:
+    name: Package AppImage and release
+    needs: wine
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: wine-tarball
+          path: wine-tarball
+
+      - name: Prerequisites
+        run: |
+          wget -q "https://github.com/AppImageCrafters/appimage-builder/releases/download/v1.0.3/appimage-builder-1.0.3-x86_64.AppImage" -O appimage-builder
+          chmod +x appimage-builder
+          ./appimage-builder --appimage-extract &>/dev/null
+          sudo wget -q https://github.com/pkgforge-dev/appimagetool-uruntime/releases/download/continuous/appimagetool-x86_64.AppImage -O /usr/local/bin/appimagetool
+          sudo chmod +x /usr/local/bin/appimagetool
+          sudo mkdir -p /usr/share/icons/hicolor/scalable/
+          sudo cp appimage/wine.svg /usr/share/icons/hicolor/scalable/
+
+      - name: Build AppImage
+        env:
+          VERSION: ${{ needs.wine.outputs.version }}
+          IN_LABEL: ${{ inputs.label }}
+          TARBALL_NAME: ${{ needs.wine.outputs.tarball }}
+        run: |
+          export WINE_TARBALL="$PWD/wine-tarball/$TARBALL_NAME"
+          export WINE_VER="custom_${VERSION}_${IN_LABEL}"
+          name="wine-custom_${VERSION}_${IN_LABEL}-$(uname -m)"
+          mkdir -p out
+          (cd appimage && ../squashfs-root/AppRun --skip-appimage --recipe recipe.yml)
+
+          export ARCH="$(uname -m)"
+          export APPIMAGE_EXTRACT_AND_RUN=1
+          export URUNTIME_PRELOAD=0
+          appimagetool --no-appstream appimage/AppDir "out/$name.AppImage"
+
+          # The same AppDir as a plain tarball, for distros that dislike AppImages.
+          # Unpack anywhere and run ./<dir>/AppRun (it needs no FUSE and no installation).
+          cp -a appimage/AppDir "$name-bundled"
+          tar -cf - "$name-bundled" | xz -T0 -9 > "out/$name-bundled.tar.xz"
+          ls -l out
+
+      - name: Report size and glibc requirement
+        run: |
+          f=$(ls out/*.AppImage)
+          chmod +x "$f"
+          d=$(mktemp -d)
+          (cd "$d" && APPIMAGE_EXTRACT_AND_RUN=1 "$OLDPWD/$f" --appimage-extract >/dev/null 2>&1)
+          w="$d/squashfs-root/opt/wine-devel"
+          need=$(objdump -T "$w"/bin/wineserver "$w"/lib/wine/x86_64-unix/ntdll.so 2>/dev/null \
+                   | grep -o 'GLIBC_[0-9.]*' | sort -Vu | tail -1)
+          {
+            echo "### $(basename "$f")"
+            echo "- AppImage: $(du -h "$f" | cut -f1), unpacked: $(du -sh "$d/squashfs-root" | cut -f1)"
+            echo "- newest glibc symbol needed by wineserver/ntdll.so: ${need:-unknown}"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IN_LABEL: ${{ inputs.label }}
+          IN_WINE_REPO: ${{ inputs.wine_repo }}
+          IN_WINE_BRANCH: ${{ inputs.wine_branch }}
+          VERSION: ${{ needs.wine.outputs.version }}
+        run: |
+          tag="appimage-${IN_LABEL}"
+          notes="Experimental build of Wine ${VERSION} from ${IN_WINE_REPO} branch ${IN_WINE_BRANCH}.
+          The AppImage, plus a tarball of the same bundled folder for systems without FUSE.
+          Untested until a maintainer promotes this release. See docs/testing.md."
+          gh release delete "$tag" --cleanup-tag --yes --repo "$GITHUB_REPOSITORY" || true
+          gh release create "$tag" --prerelease --target "$GITHUB_SHA" \
+            --title "Wine ${VERSION} AppImage (${IN_LABEL})" --notes "$notes" \
+            --repo "$GITHUB_REPOSITORY" out/*

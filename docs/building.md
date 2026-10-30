@@ -1,91 +1,93 @@
 # Building a patched Wine AppImage
 
-Building takes two GitHub Actions runs, both started by hand from the
-**Actions** tab. Allow about 30–45 minutes for the first and 5–10 for the second.
-
-> These workflows currently live in `jg00dman/Wine-Builds` and
-> `jg00dman/WINE_AppImage` (see the migration status in the
-> [README](../README.md)). You need write access to those repositories to run them.
+One GitHub Actions run does everything: it compiles a Wine branch, wraps it into an
+AppImage, and publishes a prerelease in this repository. Expect 40–60 minutes.
+You need write access to this repository to start it.
 
 ## Before you start
 
 1. **A patch branch exists** in
    [FaithLife-Community/wine](https://github.com/FaithLife-Community/wine).
    See [patches.md](patches.md) for which branch is current and how to make a new one.
-2. **The Bootstraps artifact is fresh.** The Wine build compiles inside Ubuntu chroots
-   stored as the "Bootstraps" artifact of the *Bootstraps CI* workflow, in the same
-   repository as the Wine build. Artifacts expire after 90 days. If the build fails
-   at "Download bootstraps artifact", run *Bootstraps CI* by hand first (it takes
-   about 3 hours).
+2. **The Bootstraps artifact is fresh.** Wine is compiled inside Ubuntu chroots stored
+   as the "Bootstraps" artifact of the *Bootstraps CI* workflow. It runs on the 1st
+   of each month and the artifact lasts 90 days. If the build fails at "Download
+   bootstraps artifact", run *Bootstraps CI* by hand first (about 3 hours).
 
-## Step 1: compile Wine into a tarball
+## Running a build
 
-In **jg00dman/Wine-Builds** → Actions → **Wine custom build** → *Run workflow*:
-
-| Input | Value | Example |
-|---|---|---|
-| Branch (the "Use workflow from" dropdown) | `ci/custom-build` | |
-| `wine_version` | ignored when `custom_src` is set; leave as is | |
-| `custom_src` | Git URL of the Wine fork | `https://github.com/FaithLife-Community/wine.git` |
-| `custom_branch` | the patch branch | `logos-master` |
-| `label` | short name, **no hyphens** | `logosc37cb58` |
-
-The run publishes a prerelease tagged `custom-<label>` containing
-`wine-<version>-custom-<label>-amd64.tar.xz`. The version comes from the `VERSION`
-file of the branch you built. The run's summary page shows the tarball size and the
-newest glibc the build needs (it is built on Ubuntu bionic, so it runs on old distros).
-
-The build uses `EXPERIMENTAL_WOW64=true`: a 64-bit Wine that also runs 32-bit
-Windows programs without 32-bit Linux libraries. Keep it that way.
-
-## Step 2: wrap the tarball into an AppImage
-
-In **jg00dman/WINE_AppImage** → Actions → **Custom Wine AppImage** → *Run workflow*,
-from branch `ci/custom-wine`:
+Actions → **Build Wine AppImage** → *Run workflow*:
 
 | Input | Value | Example |
 |---|---|---|
-| `wine_builds_repo` | where step 1 published | `jg00dman/Wine-Builds` |
-| `wine_builds_tag` | `custom-<label>` from step 1 | `custom-logosc37cb58` |
-| `tarball` | exact file name from step 1's release | `wine-11.20-custom-logosc37cb58-amd64.tar.xz` |
-| `wine_version` | version for the file name | `11.20` |
-| `label` | same label, **no hyphens** | `logosc37cb58` |
+| `wine_repo` | Git URL of the Wine source | `https://github.com/FaithLife-Community/wine.git` (default) |
+| `wine_branch` | the patch branch | `logos-master` (default) |
+| `label` | short name for this build, **no hyphens** | `logosc37cb58` |
+| `wine_version` | leave empty to use the branch's `VERSION` | |
 
-This publishes a prerelease tagged `appimage-<label>` with two files:
-
-- `wine-custom_<version>_<label>-x86_64.AppImage`
-- `wine-custom_<version>_<label>-x86_64-bundled.tar.xz`: the same folder as a
-  tarball. Unpack it anywhere and run `./<folder>/AppRun`; it needs no FUSE.
-
-Running it again with the same label **replaces** that release.
-
-## Step 3: test and promote
-
-Test the AppImage with Logos as described in [testing.md](testing.md). When it is
-good, a maintainer edits the release and unticks *Set as a pre-release*. Note in
-the release text which patch branch and upstream commit it was built from.
-
-## Doing it from the command line
-
-With the GitHub CLI (`gh`) logged in as someone with write access:
+Or from the command line, with the GitHub CLI logged in as a maintainer:
 
 ```bash
-gh workflow run wine-custom.yml -R jg00dman/Wine-Builds --ref ci/custom-build \
-  -f wine_version=11.20 \
-  -f custom_src=https://github.com/FaithLife-Community/wine.git \
-  -f custom_branch=logos-master -f label=logosc37cb58
-
-# when that finishes:
-gh workflow run custom.yml -R jg00dman/WINE_AppImage --ref ci/custom-wine \
-  -f wine_builds_repo=jg00dman/Wine-Builds -f wine_builds_tag=custom-logosc37cb58 \
-  -f tarball=wine-11.20-custom-logosc37cb58-amd64.tar.xz \
-  -f wine_version=11.20 -f label=logosc37cb58
+gh workflow run build.yml -R FaithLife-Community/wine-appimages \
+  -f wine_branch=logos-master -f label=logosc37cb58
 ```
+
+### Choosing a label
+
+The label appears in the file name and the release tag. OuDedetai splits AppImage file
+names on hyphens to read the version, so the workflow refuses labels containing
+hyphens. Between Wine releases, the source still reports the previous version number,
+so include the upstream commit: `logosc37cb58` means the Logos patches on upstream
+commit `c37cb58e`. For a build on a release tag, `logos` alone is fine
+(`wine-custom_11.21_logos-x86_64.AppImage`).
+
+## What you get
+
+A prerelease tagged `appimage-<label>`, containing:
+
+- `wine-custom_<version>_<label>-x86_64.AppImage`
+- `wine-custom_<version>_<label>-x86_64-bundled.tar.xz`: the same folder as a plain
+  tarball, for systems without FUSE or that dislike AppImages. Unpack anywhere and run
+  `./<folder>/AppRun`.
+
+The bare Wine tarball is kept for 30 days as the run's `wine-tarball` artifact, which
+is useful for local testing. Both jobs' summary pages show the source commit, the sizes,
+and the newest glibc the build needs. Wine is compiled on Ubuntu bionic so that it runs
+on old distros.
+
+Running the workflow again with the same label **replaces** that release.
+
+The build uses `EXPERIMENTAL_WOW64=true`: a 64-bit Wine that also runs 32-bit Windows
+programs without 32-bit Linux libraries. Keep it that way.
+
+## Testing and promoting
+
+Test the AppImage with Logos as described in [testing.md](testing.md). When it's good,
+a maintainer edits the release, unticks *Set as a pre-release*, and adds what was tested
+to the release notes.
 
 ## When a build fails
 
-- **"Download bootstraps artifact" fails**: the artifact expired. Run *Bootstraps CI*.
-- **Compile error**: usually a patch that no longer fits the newer Wine. Rebuild it
-  locally (see [patches.md](patches.md)) and fix the patch on its branch.
-- **AppImage step can't find the tarball**: check `wine_builds_tag` and `tarball`
-  against the actual release in Wine-Builds; they must match exactly.
+- **"Download bootstraps artifact" fails**: the artifact expired, or Bootstraps CI has
+  never succeeded. Run *Bootstraps CI* by hand.
+- **"Check the label" fails**: the label contains a hyphen or other character that isn't
+  allowed.
+- **Compile error in "Build Wine"**: usually a patch that no longer fits the newer Wine.
+  Fix it on its branch (see [patches.md](patches.md)), ideally after a local build.
+- **"Build AppImage" fails while downloading packages**: the recipe pulls Ubuntu focal
+  packages and winetricks from the internet; a mirror being down is usually temporary.
+  Run it again.
+
+## How it works
+
+1. **Compile Wine** (`ubuntu-22.04`): unpacks the Bootstraps chroots and runs
+   `build/build_wine.sh` with `CUSTOM_SRC_PATH`/`CUSTOM_SRC_BRANCH` set to the inputs.
+   This clones the branch and builds it in the chroot with bubblewrap. The tarball is
+   passed to the next job as an artifact.
+2. **Package AppImage and release** (`ubuntu-latest`): `appimage-builder` builds an
+   AppDir from `appimage/recipe.yml` (Ubuntu focal runtime libraries, winetricks, the
+   Wine build, and the `wrapper` launcher), `appimagetool` turns it into the AppImage,
+   and `gh release create` publishes it.
+
+The recipe deliberately has no AppImage update information, so AppImage updaters can't
+replace a patched build with someone else's.
