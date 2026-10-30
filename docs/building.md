@@ -47,7 +47,7 @@ A **draft** release tagged `<version>-<label>` (for example `11.20-logosc37cb58`
 containing, in this order:
 
 - `wine-custom_<version>_<label>-x86_64.AppImage`
-- `wine-custom_<version>_<label>-x86_64-bundled.tar.xz`: the same folder as a plain
+- `wine-custom_<version>_<label>-x86_64.bundle.tar.xz`: the same folder as a plain
   tarball, for systems without FUSE or that dislike AppImages. Unpack anywhere and run
   `./<folder>/AppRun`.
 
@@ -77,9 +77,11 @@ what users get:
 | Prerelease | Offered as the **beta** AppImage, but only while it's the most recently updated release in the repository |
 | Full release | Becomes **Recommended** for every user: the most recently updated full release wins |
 
-OuDedetai downloads a release's **first** file, so the AppImage must come before the
-bundled tarball. The workflow uploads them in that order and checks it. If you upload
-files by hand, upload the AppImage first.
+OuDedetai downloads a release's **first** file, so the AppImage must come first.
+GitHub lists a release's files **by name, not upload order**, which is why the tarball
+is named `….bundle.tar.xz`: it sorts after `….AppImage`. The workflow checks the order
+before finishing. If you add files by hand, give them names that sort after the
+AppImage's, and check the release's file list afterwards.
 
 The steps:
 
