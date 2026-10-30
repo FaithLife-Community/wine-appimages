@@ -1,0 +1,143 @@
+# appimage-builder recipe for the Wine AppImage. Used by .github/workflows/build.yml.
+# Based on mmtrt/WINE_AppImage (MIT, see LICENSES/WINE_AppImage-MIT.txt).
+version: 1
+
+script:
+  # Remove any previous build cache data
+  - rm -rf AppDir || true
+  - mkdir -p AppDir && cp wrapper AppDir
+  # Add winetricks
+  - wget -q "https://raw.githubusercontent.com/Winetricks/winetricks/master/src/winetricks" -P ./AppDir/bin && chmod +x ./AppDir/bin/winetricks
+  # Copy App icon to AppDir/usr/share/icons needed prior to appimage-builder ver 1.x.x
+  - mkdir -p AppDir/usr/share/icons ; cp wine.svg AppDir/usr/share/icons
+
+AppDir:
+  path: ./AppDir
+
+  app_info:
+    id: org.winehq.wine
+    name: wine
+    icon: wine
+    version: !ENV ${WINE_VER}
+    exec: bin/bash
+    exec_args: $APPDIR/wrapper $@
+
+  apt:
+    arch: [amd64]
+    sources:
+      - sourceline: 'deb http://archive.ubuntu.com/ubuntu/ focal main restricted universe multiverse'
+      - sourceline: 'deb http://archive.ubuntu.com/ubuntu/ focal-updates main restricted universe multiverse'
+      - sourceline: 'deb http://archive.ubuntu.com/ubuntu/ focal-backports main restricted universe multiverse'
+        key_url: 'http://keyserver.ubuntu.com/pks/lookup?op=get&search=0x871920D1991BC93C'
+      - sourceline: 'deb https://dl.winehq.org/wine-builds/ubuntu/ focal main'
+        key_url: 'https://dl.winehq.org/wine-builds/winehq.key'
+      # - sourceline: 'deb http://ppa.launchpad.net/graphics-drivers/ppa/ubuntu/ jammy main'
+        # key_url: 'http://keyserver.ubuntu.com/pks/lookup?op=get&search=0xFCAE110B1118213C'
+      - sourceline: 'deb https://ppa.launchpadcontent.net/kisak/kisak-mesa/ubuntu focal main'
+        key_url: 'https://keyserver.ubuntu.com/pks/lookup?op=get&search=0xf63f0f2b90935439'
+
+    include:
+      - bash
+      - cabextract
+      - dash
+      - coreutils
+      - mesa-utils
+      - unionfs-fuse
+      - vulkan-tools
+      - libmspack0
+
+  files:
+    exclude:
+      - sbin
+      - var
+      - etc/alternatives
+      - etc/apt
+      - etc/cron.daily
+      - etc/dpkg
+      - etc/mysql
+      - etc/sane.d
+      - etc/sensors.d
+      - etc/skel
+      - etc/snmp
+      - etc/udev
+      - etc/gss
+      - etc/init.d
+      - etc/logrotate.d
+      - lib/modprobe.d
+      - lib/systemd
+      - lib/udev
+      - usr/lib/mime
+      - usr/lib/sasl2
+      - usr/lib/tmpfiles.d
+      - usr/sbin
+      - usr/share/apps
+      - usr/share/man
+      - usr/share/doc
+      - usr/share/adduser
+      - usr/share/apport
+      - usr/share/bash-completion
+      - usr/share/bug
+      - usr/share/debconf
+      - usr/share/doc
+      - usr/share/doc-base
+      - usr/share/dpkg
+      - usr/share/glib-2.0
+      - usr/share/gst-plugins-base
+      - usr/share/hal
+      - usr/share/info
+      - usr/share/initramfs-tools
+      - usr/share/kde4
+      - usr/share/libgphoto2
+      - usr/share/lintian
+      - usr/share/menu
+      - usr/share/metainfo
+      - usr/share/mesa-demos
+      - usr/share/mime
+      - usr/share/misc
+      - usr/share/mysql-common
+      - usr/share/pixmaps
+      - usr/share/pkgconfig
+      - usr/share/polkit-1
+      - usr/share/snmp
+      - usr/share/zoneinfo
+      - usr/share/zoneinfo-icu
+      - usr/share/zsh
+
+  after_runtime:
+    # this is executed after the packages and files are added
+    - |
+     # Patch wrapper script
+     sed -i 's|wine-appimage|wine-appimage-custom|' AppDir/wrapper
+
+     # WINE_TARBALL (absolute path of the Wine build) is set by .github/workflows/build.yml
+     mkdir -p AppDir/opt ; (cd AppDir/opt ; tar -xf "${WINE_TARBALL}" ; mv wine-* wine-devel)
+
+     (cd AppDir/usr/bin; ln -s "../../opt/wine-devel/bin/"* .)
+
+     # Cleanup
+     rm -rf AppDir/usr/share/{applications,man,doc}
+     rm -rf AppDir/opt/wine-devel/share/{applications,man,doc}
+
+     # Disable FileOpenAssociations
+     sed -i 's|    LicenseInformation|    LicenseInformation,\\\n    FileOpenAssociations|g;$a \\n[FileOpenAssociations]\nHKCU,Software\\Wine\\FileOpenAssociations,"Enable",,"N"' AppDir/opt/wine-devel/share/wine/wine.inf
+
+     # Disable winemenubuilder
+     sed -i 's|    FileOpenAssociations|    FileOpenAssociations,\\\n    DllOverrides|;$a \\n[DllOverrides]\nHKCU,Software\\Wine\\DllOverrides,"*winemenubuilder.exe",,""' AppDir/opt/wine-devel/share/wine/wine.inf
+     sed -i '/\%11\%\\winemenubuilder.exe -a -r/d' AppDir/opt/wine-devel/share/wine/wine.inf
+
+     # Add MimeType info to .desktop
+     echo "MimeType=application/x-msdownload;" >> AppDir/org.winehq.wine.desktop
+
+     # Add correct executable path
+     sed -i "s/bin\/bash/wine \%F/" AppDir/org.winehq.wine.desktop
+
+  runtime:
+    path_mappings:
+    - /opt/wine-devel:$APPDIR/opt/wine-devel
+
+AppImage:
+  # No update-information: AppImage updaters must not swap our patched build for another.
+  update-information: None
+  #sign-key: None
+  arch: x86_64
+

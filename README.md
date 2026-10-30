@@ -14,22 +14,22 @@ by hand once it has been tested.
 | Repository | What it holds |
 |---|---|
 | [FaithLife-Community/wine](https://github.com/FaithLife-Community/wine) | Fork of Wine. `master` mirrors upstream; each patched build is a branch on top of an upstream commit. See [docs/patches.md](docs/patches.md). |
-| **this repository** | The build pipeline (workflows and scripts), the docs, and the testing tools. |
-| [jg00dman/Wine-Builds](https://github.com/jg00dman/Wine-Builds) *(temporary)* | Workflow that compiles Wine into a tarball. Fork of mmtrt/Wine-Builds. |
-| [jg00dman/WINE_AppImage](https://github.com/jg00dman/WINE_AppImage) *(temporary)* | Workflow that wraps the tarball into an AppImage. Fork of mmtrt/WINE_AppImage. |
+| **this repository** | Everything else: the build workflows, the build scripts, the docs, and the testing tools. Releases are published here. |
 
-### Migration status
+### What's in this repository
 
-The pipeline is being moved into this repository so it no longer depends on a
-personal account:
+| Path | Purpose |
+|---|---|
+| `.github/workflows/build.yml` | **Build Wine AppImage**: compiles a Wine branch and publishes the AppImage. Run by hand. |
+| `.github/workflows/bootstraps.yml` | **Bootstraps CI**: builds the Ubuntu chroots Wine is compiled in. Runs monthly. |
+| `build/` | Scripts used by the workflows (`build_wine.sh`, `create_ubuntu_bootstraps.sh`) |
+| `appimage/` | AppImage recipe, launcher `wrapper` and icon |
+| `tools/wine-bisect.sh` | Finds which Wine commit broke Logos; see [docs/testing.md](docs/testing.md) |
+| `docs/` | How to build, patch and test |
 
-- [x] **Bootstraps CI** — builds the Ubuntu chroots that Wine is compiled in.
-      Runs on the 1st of each month (the artifact expires after 90 days).
-- [ ] **Wine build** — still runs in `jg00dman/Wine-Builds` (`wine-custom.yml`).
-- [ ] **AppImage packaging** — still runs in `jg00dman/WINE_AppImage` (`custom.yml`).
-
-Until the last two boxes are ticked, follow [docs/building.md](docs/building.md),
-which describes the current two-step process.
+The build scripts and AppImage recipe came from mmtrt's Wine-Builds and WINE_AppImage
+(via the temporary forks jg00dman/Wine-Builds and jg00dman/WINE_AppImage, which are no
+longer needed for builds).
 
 ## Quick start
 

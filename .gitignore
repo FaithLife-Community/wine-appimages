@@ -1,0 +1,6 @@
+# local runs of the build
+/build/wine-*.tar.xz
+/appimage/AppDir/
+/appimage/appimage-build/
+/squashfs-root/
+/out/
