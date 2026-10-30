@@ -2,8 +2,9 @@ name: Build Wine AppImage
 
 # Builds Wine from a branch of a Wine git repository (by default a patch branch of
 # FaithLife-Community/wine), wraps it into an AppImage plus a plain "bundled" tarball,
-# and publishes both as a prerelease tagged appimage-<label>. A maintainer promotes the
-# release by hand after testing. See docs/building.md.
+# and uploads both to a DRAFT release tagged <version>-<label>. A maintainer publishes
+# it after testing: first as a prerelease (OuDedetai's beta), later as a full release
+# (OuDedetai's Recommended for everyone). See docs/building.md.
 #
 # Prerequisite: a successful "Bootstraps CI" run in this repository within the last
 # 90 days (its artifact holds the Ubuntu chroots Wine is compiled in).
@@ -186,11 +187,21 @@ jobs:
           IN_WINE_BRANCH: ${{ inputs.wine_branch }}
           VERSION: ${{ needs.wine.outputs.version }}
         run: |
-          tag="appimage-${IN_LABEL}"
-          notes="Experimental build of Wine ${VERSION} from ${IN_WINE_REPO} branch ${IN_WINE_BRANCH}.
+          # Same <version>-<branch> style as the older releases; OuDedetai reads the tag as the version.
+          tag="${VERSION}-${IN_LABEL}"
+          notes="Untested build of Wine ${VERSION} from ${IN_WINE_REPO} branch ${IN_WINE_BRANCH}.
           The AppImage, plus a tarball of the same bundled folder for systems without FUSE.
-          Untested until a maintainer promotes this release. See docs/testing.md."
+          See docs/building.md for testing and publishing."
           gh release delete "$tag" --cleanup-tag --yes --repo "$GITHUB_REPOSITORY" || true
-          gh release create "$tag" --prerelease --target "$GITHUB_SHA" \
+          # A draft: OuDedetai offers the newest prerelease as its beta and the newest full
+          # release to everyone, so nothing becomes visible until a maintainer publishes it.
+          # OuDedetai downloads the FIRST asset, so the AppImage must be uploaded first.
+          gh release create "$tag" --draft --prerelease --target "$GITHUB_SHA" \
             --title "Wine ${VERSION} AppImage (${IN_LABEL})" --notes "$notes" \
-            --repo "$GITHUB_REPOSITORY" out/*
+            --repo "$GITHUB_REPOSITORY" out/*.AppImage
+          gh release upload "$tag" out/*-bundled.tar.xz --repo "$GITHUB_REPOSITORY"
+          first=$(gh api "repos/$GITHUB_REPOSITORY/releases" --jq ".[] | select(.tag_name == \"$tag\") | .assets[0].name")
+          case "$first" in
+            *.AppImage) echo "First asset: $first" ;;
+            *) echo "::error::first asset is '$first', not the AppImage; OuDedetai would download the wrong file"; exit 1 ;;
+          esac

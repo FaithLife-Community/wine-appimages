@@ -43,7 +43,8 @@ commit `c37cb58e`. For a build on a release tag, `logos` alone is fine
 
 ## What you get
 
-A prerelease tagged `appimage-<label>`, containing:
+A **draft** release tagged `<version>-<label>` (for example `11.20-logosc37cb58`),
+containing, in this order:
 
 - `wine-custom_<version>_<label>-x86_64.AppImage`
 - `wine-custom_<version>_<label>-x86_64-bundled.tar.xz`: the same folder as a plain
@@ -57,14 +58,34 @@ on old distros.
 
 Running the workflow again with the same label **replaces** that release.
 
+Drafts are visible only to maintainers, on the repository's Releases page.
+
 The build uses `EXPERIMENTAL_WOW64=true`: a 64-bit Wine that also runs 32-bit Windows
 programs without 32-bit Linux libraries. Keep it that way.
 
-## Testing and promoting
+## Testing and publishing
 
-Test the AppImage with Logos as described in [testing.md](testing.md). When it's good,
-a maintainer edits the release, unticks *Set as a pre-release*, and adds what was tested
-to the release notes.
+**OuDedetai reads this repository's releases directly**, so publishing a release changes
+what users get:
+
+| Release state | What OuDedetai does with it |
+|---|---|
+| Draft | Nothing: invisible to users |
+| Prerelease | Offered as the **beta** AppImage, but only while it's the most recently updated release in the repository |
+| Full release | Becomes **Recommended** for every user: the most recently updated full release wins |
+
+OuDedetai downloads a release's **first** file, so the AppImage must come before the
+bundled tarball. The workflow uploads them in that order and checks it. If you upload
+files by hand, upload the AppImage first.
+
+The steps:
+
+1. Download the AppImage from the draft and test it with Logos (see [testing.md](testing.md)).
+2. If it works, edit the draft, tick *Set as a pre-release*, add what you tested to the
+   notes, and click *Publish release*. It becomes OuDedetai's beta, replacing any
+   earlier beta, so let the other maintainers know.
+3. Once beta users have confirmed it, edit it again and untick *Set as a pre-release*.
+   That makes it Recommended for everyone.
 
 ## When a build fails
 
@@ -87,7 +108,7 @@ to the release notes.
 2. **Package AppImage and release** (`ubuntu-latest`): `appimage-builder` builds an
    AppDir from `appimage/recipe.yml` (Ubuntu focal runtime libraries, winetricks, the
    Wine build, and the `wrapper` launcher), `appimagetool` turns it into the AppImage,
-   and `gh release create` publishes it.
+   and `gh release create` uploads it to a draft release.
 
 The recipe deliberately has no AppImage update information, so AppImage updaters can't
 replace a patched build with someone else's.
