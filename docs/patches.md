@@ -11,7 +11,7 @@ dropped from here.
 |---|---|---|---|
 | `master` | upstream | Mirror of upstream Wine. Never commit here. | |
 | **`logos-master`** | upstream `c37cb58e` (29 Oct 2026, after 11.20) | Patches 1–3 | **Current.** Includes the upstream fix for the 11.20 startup crash ([bug 60528](https://bugs.winehq.org/show_bug.cgi?id=60528)). |
-| `wineps-glyph-names` | `logos-master` | Patches 1–6 (printing). To be folded into `logos-master`. |
+| `wineps-glyph-names` | `logos-master` | Patches 1–8 (printing). To be folded into `logos-master`. |
 | `logos-11.20` | `wine-11.20` | All patches below | Superseded: 11.20 itself crashes at startup on some systems. |
 | `cef-share` | `wine-10.13` | The two CEF memory patches | Original development branch. |
 | `cef-vprot` | `wine-10.13` | The first CEF memory patch only | Original development branch. |
@@ -78,6 +78,23 @@ commit in the build label (see the [README](../README.md#naming)).
 - **Problem:** WPF prints through `StartXpsPrintJob` whenever xpsprint.dll exports it.
   Wine only has a stub, which raises an exception, so printing crashed.
 - **Fix:** drop the stub exports. WPF then falls back to GDI printing through wineps.
+- **Upstream:** not yet submitted.
+
+### 7. wineps: Map ligatures and alternate glyphs back to their text through GSUB
+
+- **Problem:** ligatures such as "Th" and alternate glyphs have no cmap entry, so patch 5
+  can't name them and they stayed unsearchable.
+- **Fix:** read the font's GSUB table (single, alternate, ligature and extension lookups)
+  to work out the text each glyph stands for. Single-character alternates go into the
+  font's `FontInfo /GlyphNames2Unicode`, as Windows' PostScript driver does.
+- **Upstream:** not yet submitted.
+
+### 8. wineps: Mark ligature glyphs with their text through ActualText spans
+
+- **Problem:** Ghostscript drops `GlyphNames2Unicode` entries longer than one character
+  for these fonts, so ligatures from patch 7 still couldn't be selected.
+- **Fix:** wrap each ligature in a `/Span <</ActualText ...>> /BDC` pdfmark. The prolog
+  makes `pdfmark` a no-op on printers that don't know it.
 - **Upstream:** not yet submitted.
 
 Printing also needs OuDedetai's prefix settings: WPF's `DisableXPSOMPrinting` switch,
