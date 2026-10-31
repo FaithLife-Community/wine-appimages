@@ -199,14 +199,20 @@ jobs:
           See docs/building.md for testing and publishing."
           # Only replace an earlier build with this tag while it is still a draft. A published
           # release may be what OuDedetai is offering users right now, so never delete it.
+          # A draft has no git tag yet, so delete it by id: "gh release delete --cleanup-tag"
+          # can fail trying to remove the missing tag (the likely cause of run 41147560589 failing).
           existing=$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases" \
-                       --jq ".[] | select(.tag_name == \"$tag\") | .draft")
-          case "$existing" in
-            "") ;;
-            true) gh release delete "$tag" --cleanup-tag --yes --repo "$GITHUB_REPOSITORY" ;;
-            *) echo "::error::release $tag is already published; choose a new label (published releases are never replaced)"
-               exit 1 ;;
-          esac
+                       --jq ".[] | select(.tag_name == \"$tag\") | \"\\(.id) \\(.draft)\"")
+          while read -r id draft; do
+            [ -z "$id" ] && continue
+            if [ "$draft" = "true" ]; then
+              gh api -X DELETE "repos/$GITHUB_REPOSITORY/releases/$id"
+              echo "Replaced earlier draft $tag (release id $id)"
+            else
+              echo "::error::release $tag is already published; choose a new label (published releases are never replaced)"
+              exit 1
+            fi
+          done <<< "$existing"
           # A draft: OuDedetai offers the newest prerelease as its beta and the newest full
           # release to everyone, so nothing becomes visible until a maintainer publishes it.
           # OuDedetai downloads the FIRST asset. GitHub orders assets by name, not upload
