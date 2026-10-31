@@ -10,7 +10,8 @@ dropped from here.
 | Branch | Base | Contents | Status |
 |---|---|---|---|
 | `master` | upstream | Mirror of upstream Wine. Never commit here. | |
-| **`logos-master`** | upstream `c37cb58e` (29 Oct 2026, after 11.20) | All patches below | **Current.** Includes the upstream fix for the 11.20 startup crash ([bug 60528](https://bugs.winehq.org/show_bug.cgi?id=60528)). |
+| **`logos-master`** | upstream `c37cb58e` (29 Oct 2026, after 11.20) | Patches 1–3 | **Current.** Includes the upstream fix for the 11.20 startup crash ([bug 60528](https://bugs.winehq.org/show_bug.cgi?id=60528)). |
+| `wineps-glyph-names` | `logos-master` | Patches 1–6 (printing). To be folded into `logos-master`. |
 | `logos-11.20` | `wine-11.20` | All patches below | Superseded: 11.20 itself crashes at startup on some systems. |
 | `cef-share` | `wine-10.13` | The two CEF memory patches | Original development branch. |
 | `cef-vprot` | `wine-10.13` | The first CEF memory patch only | Original development branch. |
@@ -51,6 +52,38 @@ commit in the build label (see the [README](../README.md#naming)).
 - **Fix:** skip such files again, as Wine did before that commit, with a test.
 - **Upstream:** WineHQ bug report filed 30 Oct 2026; merge request to follow.
   Found with the bisect harness in [testing.md](testing.md).
+
+### 4. prntvpt: Return the driver's full DEVMODE from PTConvertPrintTicketToDevMode (plus test)
+
+- **Problem:** Logos (through WPF) passes the DEVMODE from `PTConvertPrintTicketToDevMode`
+  straight back to `DocumentPropertiesW` as both input and output buffer when it shows the
+  printer's Properties dialog. Wine returned only the 220-byte public part. wineps then
+  copied its full DEVMODE (~7.4 KB) into that buffer, which corrupted the .NET heap and
+  crashed Logos. Paper sizes chosen in the dialog (e.g. A4) were also lost.
+- **Fix:** start from the driver's own DEVMODE, private part included (as Windows does),
+  and apply the ticket's settings on top.
+- **Upstream:** not yet submitted.
+
+### 5. wineps: Name glyphs after their character when the font has no glyph names
+
+- **Problem:** fonts with a format 3.0 `post` table have no glyph names, so glyphs were
+  downloaded as `g<index>`. Ghostscript (cups-pdf) uses glyph names to rebuild the text,
+  so PDFs printed from Logos looked right but their text couldn't be searched or copied.
+- **Fix:** map glyph indices back to characters through the font's cmap and use AGL
+  `uniXXXX` names.
+- **Upstream:** not yet submitted.
+
+### 6. xpsprint: Don't export StartXpsPrintJob stubs
+
+- **Problem:** WPF prints through `StartXpsPrintJob` whenever xpsprint.dll exports it.
+  Wine only has a stub, which raises an exception, so printing crashed.
+- **Fix:** drop the stub exports. WPF then falls back to GDI printing through wineps.
+- **Upstream:** not yet submitted.
+
+Printing also needs OuDedetai's prefix settings: WPF's `DisableXPSOMPrinting` switch,
+because Wine doesn't implement the Print Document Package API that WPF otherwise uses,
+plus font replacements for the Windows fonts Logos expects. The fonts themselves are
+bundled in the AppImage.
 
 ## Moving the patches to a newer Wine
 
