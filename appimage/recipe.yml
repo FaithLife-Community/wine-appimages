@@ -45,6 +45,10 @@ AppDir:
       - unionfs-fuse
       - vulkan-tools
       - libmspack0
+      # Open, metric-compatible stand-ins for Windows fonts Logos needs (copied into
+      # Wine's font folder below; OuDedetai maps the Windows names onto them)
+      - fonts-liberation2
+      - fonts-crosextra-carlito
 
   files:
     exclude:
@@ -113,6 +117,19 @@ AppDir:
      mkdir -p AppDir/opt ; (cd AppDir/opt ; tar -xf "${WINE_TARBALL}" ; mv wine-* wine-devel)
 
      (cd AppDir/usr/bin; ln -s "../../opt/wine-devel/bin/"* .)
+
+     # Bundle Liberation (Arial/Times New Roman/Courier New metrics) and Carlito (Calibri
+     # metrics) in Wine's own font folder. Wine loads every font there into each prefix,
+     # so they work offline and without distro font packages. Unmodified OFL fonts,
+     # shipped with their licences.
+     winefonts=AppDir/opt/wine-devel/share/wine/fonts
+     find AppDir/usr/share/fonts \( -name 'Liberation*.ttf' -o -name 'Carlito-*.ttf' \) -exec cp -t "$winefonts" {} +
+     for f in LiberationSans LiberationSerif LiberationMono Carlito; do
+       for s in Regular Bold Italic BoldItalic; do
+         [ -f "$winefonts/$f-$s.ttf" ] || { echo "missing bundled font $f-$s.ttf" >&2; exit 1; }
+       done
+     done
+     cp fonts/LICENSE-*.txt "$winefonts"/
 
      # Cleanup
      rm -rf AppDir/usr/share/{applications,man,doc}
