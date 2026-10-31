@@ -129,6 +129,18 @@ AppDir:
          [ -f "$winefonts/$f-$s.ttf" ] || { echo "missing bundled font $f-$s.ttf" >&2; exit 1; }
        done
      done
+     # Selawik: Microsoft's OFL stand-in for Segoe UI (same metrics). Not packaged by
+     # Ubuntu, so take the upstream release, pinned by checksum (as Homebrew's
+     # font-selawik cask does).
+     selawik_zip=$(mktemp --suffix=.zip)
+     wget -q "https://github.com/microsoft/Selawik/releases/download/1.01/Selawik_Release.zip" -O "$selawik_zip"
+     echo "3f62c51e05e3b5a1e6241cf92a371f0be2ea1183aa87b30718bbd40832a8d423  $selawik_zip" | sha256sum -c -
+     unzip -j -o "$selawik_zip" '*.ttf' -d "$winefonts"
+     rm -f "$selawik_zip"
+     for f in selawk selawkb selawkl selawksb selawksl; do
+       [ -f "$winefonts/$f.ttf" ] || { echo "missing bundled font $f.ttf" >&2; exit 1; }
+     done
+
      cp fonts/LICENSE-*.txt "$winefonts"/
 
      # Cleanup
