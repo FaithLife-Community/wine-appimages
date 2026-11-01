@@ -27,10 +27,6 @@ on:
         description: "Version for the file names; empty = the VERSION of the branch"
         default: ""
         required: false
-      bootstraps_run:
-        description: "Bootstraps CI run id to take the chroots from; empty = the latest successful run"
-        default: ""
-        required: false
 
 permissions:
   contents: write   # publish the release
@@ -67,21 +63,8 @@ jobs:
         with:
           workflow: bootstraps.yml
           workflow_conclusion: success
-          run_id: ${{ inputs.bootstraps_run }}
           name: Bootstraps
           path: /opt/Bootstraps
-
-      # Keep the compiler cache between runs, so a rebuild only recompiles what changed.
-      # Each run saves a new entry; restore-keys picks the newest one for this branch,
-      # then the newest for any branch.
-      - name: Restore compiler cache
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/ccache
-          key: ccache-${{ inputs.wine_branch }}-${{ github.run_id }}
-          restore-keys: |
-            ccache-${{ inputs.wine_branch }}-
-            ccache-
 
       - name: Build Wine
         id: build
@@ -93,11 +76,9 @@ jobs:
           IN_WINE_VERSION: ${{ inputs.wine_version }}
         run: |
           sudo apt update
-          sudo apt install binutils-mingw-w64-i686 binutils-mingw-w64-x86-64 debootstrap perl git wget xz-utils bubblewrap autoconf patchelf
+          sudo apt install binutils-mingw-w64-i686 binutils-mingw-w64-x86-64 debootstrap perl git wget xz-utils bubblewrap autoconf
           sudo tar -C /opt -xpf /opt/Bootstraps/bootstraps.tar.xz
           export EXPERIMENTAL_WOW64="true"
-          export USE_CCACHE="true"
-          export CCACHE_DIR="$HOME/.cache/ccache"
           export CUSTOM_SRC_PATH="$IN_WINE_REPO"
           export CUSTOM_SRC_BRANCH="$IN_WINE_BRANCH"
           export CUSTOM_BUILD_LABEL="$IN_LABEL"
@@ -110,7 +91,6 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "commit=$(git ls-remote "$IN_WINE_REPO" "$IN_WINE_BRANCH" | head -n1 | cut -c1-12)" >> "$GITHUB_OUTPUT"
           ls -l "$f"; sha256sum "$f"
-          /opt/chroots/bionic64_chroot/usr/local/bin/ccache -s 2>/dev/null || true
 
       - name: Report size and glibc requirement
         env:
@@ -219,16 +199,20 @@ jobs:
           See docs/building.md for testing and publishing."
           # Only replace an earlier build with this tag while it is still a draft. A published
           # release may be what OuDedetai is offering users right now, so never delete it.
+          # A draft has no git tag yet, so delete it by id: "gh release delete --cleanup-tag"
+          # can fail trying to remove the missing tag (the likely cause of run 41147560589 failing).
           existing=$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases" \
-                       --jq ".[] | select(.tag_name == \"$tag\") | .draft")
-          case "$existing" in
-            "") ;;
-            # A draft has no git tag yet, so --cleanup-tag would fail; drop a stray tag separately.
-            true) gh release delete "$tag" --yes --repo "$GITHUB_REPOSITORY"
-                  gh api -X DELETE "repos/$GITHUB_REPOSITORY/git/refs/tags/$tag" 2>/dev/null || true ;;
-            *) echo "::error::release $tag is already published; choose a new label (published releases are never replaced)"
-               exit 1 ;;
-          esac
+                       --jq ".[] | select(.tag_name == \"$tag\") | \"\\(.id) \\(.draft)\"")
+          while read -r id draft; do
+            [ -z "$id" ] && continue
+            if [ "$draft" = "true" ]; then
+              gh api -X DELETE "repos/$GITHUB_REPOSITORY/releases/$id"
+              echo "Replaced earlier draft $tag (release id $id)"
+            else
+              echo "::error::release $tag is already published; choose a new label (published releases are never replaced)"
+              exit 1
+            fi
+          done <<< "$existing"
           # A draft: OuDedetai offers the newest prerelease as its beta and the newest full
           # release to everyone, so nothing becomes visible until a maintainer publishes it.
           # OuDedetai downloads the FIRST asset. GitHub orders assets by name, not upload
