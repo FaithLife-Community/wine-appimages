@@ -267,6 +267,7 @@ cd ../ && rm -rf build && mkdir build && cd build
 	--disable-avdevice --disable-avfilter --disable-swscale --disable-network \
 	--disable-encoders --disable-muxers --disable-hwaccels --disable-indevs --disable-outdevs
 make -j$(nproc) install
+apt-get -y purge nasm
 fi
 cd /opt && rm -r /opt/build_libs
 EOF

@@ -85,7 +85,9 @@ export DO_NOT_COMPILE="false"
 # Make sure that ccache is installed before enabling this.
 export USE_CCACHE="${USE_CCACHE:-false}"
 
-export WINE_BUILD_OPTIONS="--without-oss --disable-winemenubuilder --disable-tests --enable-archs=x86_64,i386"
+# NASM=false: bionic's nasm (2.13) can't build Wine's bundled PE FFmpeg (its -I paths
+# need a trailing slash), so build that without assembly, as before nasm was installed.
+export WINE_BUILD_OPTIONS="--without-oss --disable-winemenubuilder --disable-tests --enable-archs=x86_64,i386 NASM=false"
 
 # A temporary directory where the Wine source code will be stored.
 # Do not set this variable to an existing non-empty directory!
