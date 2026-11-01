@@ -76,7 +76,7 @@ jobs:
           IN_WINE_VERSION: ${{ inputs.wine_version }}
         run: |
           sudo apt update
-          sudo apt install binutils-mingw-w64-i686 binutils-mingw-w64-x86-64 debootstrap perl git wget xz-utils bubblewrap autoconf
+          sudo apt install binutils-mingw-w64-i686 binutils-mingw-w64-x86-64 debootstrap perl git wget xz-utils bubblewrap autoconf patchelf
           sudo tar -C /opt -xpf /opt/Bootstraps/bootstraps.tar.xz
           export EXPERIMENTAL_WOW64="true"
           export CUSTOM_SRC_PATH="$IN_WINE_REPO"

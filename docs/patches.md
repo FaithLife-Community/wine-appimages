@@ -10,8 +10,13 @@ dropped from here.
 | Branch | Base | Contents | Status |
 |---|---|---|---|
 | `master` | upstream | Mirror of upstream Wine. Never commit here. | |
-| **`logos-master`** | upstream `c37cb58e` (29 Oct 2026, after 11.20) | Patches 1–3 | **Current.** Includes the upstream fix for the 11.20 startup crash ([bug 60528](https://bugs.winehq.org/show_bug.cgi?id=60528)). |
-| `wineps-glyph-names` | `logos-master` | Patches 1–8 (printing). To be folded into `logos-master`. |
+| **`logos-11.21`** | `wine-11.21` | Patches 1–13 | **Current.** Printing (4–8) and media playback (9–13). |
+| `logos-master` | upstream `c37cb58e` (29 Oct 2026, after 11.20) | Patches 1–3 | Superseded by `logos-11.21`. Included the upstream fix for the 11.20 startup crash ([bug 60528](https://bugs.winehq.org/show_bug.cgi?id=60528)). |
+| `logos-11.21-media` | `wine-11.21` | Patches 1–3, 9–13 | Media development branch; folded into `logos-11.21`. |
+| `wineps-glyph-names` | `logos-master` | Patches 1–8 | Printing development branch; folded into `logos-11.21`. |
+| `prntvpt-devmode` | `logos-master` | Patches 1–4 | Patch 4 alone, for the upstream merge request. |
+| `d3d9-getrendertargetdata` | `logos-master` | Patches 1–3, 9 | Media development branch. |
+| `wineps-gsub-debug` | `wineps-glyph-names` | A debug trace | Throwaway: dumps fonts' GSUB and cmap tables. Never build releases from it. |
 | `logos-11.20` | `wine-11.20` | All patches below | Superseded: 11.20 itself crashes at startup on some systems. |
 | `cef-share` | `wine-10.13` | The two CEF memory patches | Original development branch. |
 | `cef-vprot` | `wine-10.13` | The first CEF memory patch only | Original development branch. |
@@ -96,6 +101,35 @@ commit in the build label (see the [README](../README.md#naming)).
 - **Fix:** wrap each ligature in a `/Span <</ActualText ...>> /BDC` pdfmark. The prolog
   makes `pdfmark` a no-op on printers that don't know it.
 - **Upstream:** not yet submitted.
+
+### 9. d3d9: Wait for GetRenderTargetData() to complete
+
+- **Problem:** the copy was queued and the call returned at once; Logos reads the
+  destination memory straight away, so video frames were black or late.
+- **Fix:** map and unmap the destination after the blit.
+- **Upstream:** not yet submitted.
+
+### 10. wined3d: Use the texture size for blits to swapchain textures through an FBO
+
+- **Problem:** blits into any swapchain texture were clipped to the window's client
+  size. Logos's video presenter draws into back buffers of tiny or message-only
+  windows, so every frame was lost.
+- **Upstream:** not yet submitted.
+
+### 11–13. evr and mf: keep frames flowing across resize and seek
+
+- **11. evr/mixer: Request input whenever ProcessOutput() needs more input.** After a
+  repaint or a flush the mixer never asked for more, so the picture froze.
+- **12. evr/mixer: Send sample requests after releasing the mixer lock.** Fixes a
+  deadlock with the renderer.
+- **13. mf/evr: Handle sample requests from the mixer without the renderer lock.**
+  Fixes a deadlock with Logos's presenter thread on seek.
+- **Upstream:** not yet submitted; tests still to write.
+
+Media playback also needs Wine built with FFmpeg: winedmo, Wine's FFmpeg-based media
+source, is what OuDedetai's `DisableGstByteStreamHandler=1` switches Logos to. The build
+bundles FFmpeg (see [building.md](building.md)); decoding still uses the host's
+GStreamer. OuDedetai also needs `renderer=gl`.
 
 Printing also needs OuDedetai's prefix settings: WPF's `DisableXPSOMPrinting` switch,
 because Wine doesn't implement the Print Document Package API that WPF otherwise uses,

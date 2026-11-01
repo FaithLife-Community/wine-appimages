@@ -21,7 +21,7 @@ Actions → **Build Wine AppImage** → *Run workflow*:
 | Input | Value | Example |
 |---|---|---|
 | `wine_repo` | Git URL of the Wine source | `https://github.com/FaithLife-Community/wine.git` (default) |
-| `wine_branch` | the patch branch | `logos-master` (default) |
+| `wine_branch` | the patch branch | `logos-11.21` |
 | `label` | short name for this build, **no hyphens** | `logosc37cb58` |
 | `wine_version` | leave empty to use the branch's `VERSION` | |
 
@@ -62,6 +62,17 @@ fails at the release step instead, so a live build can't be swapped out by accid
 pick a new label.
 
 Drafts are visible only to maintainers, on the repository's Releases page.
+
+**FFmpeg.** The 64-bit chroot carries a minimal LGPL build of FFmpeg (demuxing
+libraries only; `ffmpeg_version` in `build/create_ubuntu_bootstraps.sh`). Wine's
+configure finds it, which builds `winedmo.so`, the FFmpeg-based Media Foundation source
+Logos video needs. `build_wine.sh` then copies `libavformat`, `libavcodec`, `libavutil`
+and `libswresample` next to `winedmo.so` in `lib/wine/x86_64-unix`, sets their RUNPATH
+to `$ORIGIN` with `patchelf`, and adds `FFMPEG-README.txt` and the LGPL text there. So
+the build doesn't depend on the host's FFmpeg version. It stops with an error if the
+chroot has FFmpeg but `winedmo.so` wasn't linked against it. Bootstraps made before
+FFmpeg was added have none, and then builds have no `winedmo.so`: run *Bootstraps CI*
+again.
 
 The build uses `EXPERIMENTAL_WOW64=true`: a 64-bit Wine that also runs 32-bit Windows
 programs without 32-bit Linux libraries. Keep it that way.

@@ -62,3 +62,7 @@ metric-compatible stand-ins for Arial, Times New Roman, Courier New, Calibri and
 Segoe UI. Logos's print preview needs fonts with those names, and OuDedetai maps
 the Windows names onto these fonts through `HKCU\Software\Wine\Fonts\Replacements`.
 Selawik comes from its 1.01 GitHub release, pinned by SHA-256.
+
+The Wine build also bundles unmodified FFmpeg shared libraries (`libavformat`,
+`libavcodec`, `libavutil`, `libswresample`) in `lib/wine/x86_64-unix`, under the
+GNU LGPL 2.1 or later. The version, source link and licence text sit next to them.

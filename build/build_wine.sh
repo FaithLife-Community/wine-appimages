@@ -350,6 +350,7 @@ cd "${BUILD_DIR}"/build64 || exit
 ${BWRAP64} "${BUILD_DIR}"/wine/configure ${WINE_BUILD_OPTIONS} --prefix "${BUILD_DIR}"/wine-"${BUILD_NAME}"-amd64
 ${BWRAP64} make -j$(nproc) install
 
+
 echo
 echo "Compilation complete"
 echo "Creating and compressing archives..."
@@ -387,6 +388,38 @@ for build in ${builds_list}; do
 		# strip files
 		strip ./"${build}"/bin/w*
 		find ./"${build}"/lib/wine/*-unix -type f -name '*' -exec strip {} \;
+
+		# winedmo (Wine's Media Foundation demuxer) links to FFmpeg. Bundle the bootstrap's
+		# FFmpeg libraries next to it and point its RUNPATH there, so the build doesn't
+		# depend on whichever FFmpeg (and soname) the host has.
+		unixdir="${build}"/lib/wine/x86_64-unix
+		if ls "${BOOTSTRAP_X64}"/usr/local/lib/libavformat.so.* >/dev/null 2>&1; then
+			if ! command -v patchelf >/dev/null; then
+				echo "patchelf is required to bundle FFmpeg"
+				exit 1
+			fi
+			if ! readelf -d "${unixdir}"/winedmo.so 2>/dev/null | grep -q 'libavformat'; then
+				echo "FFmpeg is in the bootstrap but winedmo.so wasn't built with it"
+				exit 1
+			fi
+			cp -a "${BOOTSTRAP_X64}"/usr/local/lib/lib{avformat,avcodec,avutil,swresample}.so.* "${unixdir}"/ 2>/dev/null
+			for f in "${unixdir}"/lib{avformat,avcodec,avutil,swresample}.so.*; do
+				[ -f "$f" ] && [ ! -L "$f" ] && strip --strip-unneeded "$f"
+			done
+			for f in "${unixdir}"/winedmo.so "${unixdir}"/lib{avformat,avcodec,avutil,swresample}.so.*; do
+				[ -f "$f" ] && [ ! -L "$f" ] && patchelf --set-rpath '$ORIGIN' "$f"
+			done
+			ffver=$(sed -n 's/^#define FFMPEG_VERSION "\(.*\)"/\1/p' "${BOOTSTRAP_X64}"/usr/local/include/libavutil/ffversion.h 2>/dev/null)
+			cat > "${unixdir}"/FFMPEG-README.txt <<-FFEOF
+			These libav* libraries are FFmpeg ${ffver:-unknown}, unmodified, built as shared libraries
+			under the GNU LGPL 2.1 or later; the licence text is in COPYING.LGPL-2.1 here.
+			Source: https://ffmpeg.org/releases/ffmpeg-${ffver}.tar.xz
+			Build recipe: build/create_ubuntu_bootstraps.sh in
+			https://github.com/FaithLife-Community/wine-appimages
+			FFEOF
+			cp wine/COPYING.LIB "${unixdir}"/COPYING.LGPL-2.1
+			echo "Bundled FFmpeg: $(cd "${unixdir}" && ls lib{avformat,avcodec,avutil,swresample}.so.* 2>/dev/null | tr '\n' ' ')"
+		fi
 
 		tar -Jcf "${build}".tar.xz "${build}"
 		mv "${build}".tar.xz "${result_dir}"
