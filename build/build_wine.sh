@@ -83,7 +83,7 @@ export DO_NOT_COMPILE="false"
 # By default it has a 5 GB limit for its cache size.
 #
 # Make sure that ccache is installed before enabling this.
-export USE_CCACHE="false"
+export USE_CCACHE="${USE_CCACHE:-false}"
 
 export WINE_BUILD_OPTIONS="--without-oss --disable-winemenubuilder --disable-tests --enable-archs=x86_64,i386"
 
@@ -132,6 +132,14 @@ if [ "$USE_CCACHE" = "true" ]; then
 
 	mkdir -p "${XDG_CACHE_HOME}"/ccache
 	mkdir -p "${HOME}"/.ccache
+
+	# Use one cache directory, and compare compilers by content: the bootstraps are
+	# unpacked afresh for each CI run, so their timestamps always change.
+	export CCACHE_DIR="${CCACHE_DIR:-${XDG_CACHE_HOME}/ccache}"
+	export CCACHE_COMPILERCHECK=content
+	export CCACHE_BASEDIR="${BUILD_DIR}"
+	export CCACHE_NOHASHDIR=true
+	export CCACHE_MAXSIZE="${CCACHE_MAXSIZE:-3G}"
 fi
 
 build_with_bwrap () {

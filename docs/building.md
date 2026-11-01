@@ -1,7 +1,8 @@
 # Building a patched Wine AppImage
 
 One GitHub Actions run does everything: it compiles a Wine branch, wraps it into an
-AppImage, and publishes a prerelease in this repository. Expect 40–60 minutes.
+AppImage, and publishes a prerelease in this repository. Expect 40–60 minutes for a
+first build; rebuilds after small changes are quicker thanks to the compiler cache.
 You need write access to this repository to start it.
 
 ## Before you start
@@ -123,6 +124,11 @@ The steps:
    `build/build_wine.sh` with `CUSTOM_SRC_PATH`/`CUSTOM_SRC_BRANCH` set to the inputs.
    This clones the branch and builds it in the chroot with bubblewrap. The tarball is
    passed to the next job as an artifact.
+   The compiler cache (ccache) is kept between runs with `actions/cache`, keyed by
+   branch: a rebuild after a small patch only recompiles the files that changed, and a
+   new branch starts from the newest cache of any branch. A cold build is slightly
+   slower than without ccache. To start cold, delete the `ccache-*` entries under
+   Actions → Caches. The step log ends with `ccache -s` hit statistics.
 2. **Package AppImage and release** (`ubuntu-24.04`, pinned because appimage-builder
    uses the host's apt): `appimage-builder` builds an
    AppDir from `appimage/recipe.yml` (Ubuntu focal runtime libraries, winetricks, the

@@ -71,6 +71,18 @@ jobs:
           name: Bootstraps
           path: /opt/Bootstraps
 
+      # Keep the compiler cache between runs, so a rebuild only recompiles what changed.
+      # Each run saves a new entry; restore-keys picks the newest one for this branch,
+      # then the newest for any branch.
+      - name: Restore compiler cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ccache
+          key: ccache-${{ inputs.wine_branch }}-${{ github.run_id }}
+          restore-keys: |
+            ccache-${{ inputs.wine_branch }}-
+            ccache-
+
       - name: Build Wine
         id: build
         env:
@@ -84,6 +96,8 @@ jobs:
           sudo apt install binutils-mingw-w64-i686 binutils-mingw-w64-x86-64 debootstrap perl git wget xz-utils bubblewrap autoconf patchelf
           sudo tar -C /opt -xpf /opt/Bootstraps/bootstraps.tar.xz
           export EXPERIMENTAL_WOW64="true"
+          export USE_CCACHE="true"
+          export CCACHE_DIR="$HOME/.cache/ccache"
           export CUSTOM_SRC_PATH="$IN_WINE_REPO"
           export CUSTOM_SRC_BRANCH="$IN_WINE_BRANCH"
           export CUSTOM_BUILD_LABEL="$IN_LABEL"
@@ -96,6 +110,7 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "commit=$(git ls-remote "$IN_WINE_REPO" "$IN_WINE_BRANCH" | head -n1 | cut -c1-12)" >> "$GITHUB_OUTPUT"
           ls -l "$f"; sha256sum "$f"
+          /opt/chroots/bionic64_chroot/usr/local/bin/ccache -s 2>/dev/null || true
 
       - name: Report size and glibc requirement
         env:
