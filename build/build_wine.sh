@@ -355,6 +355,10 @@ export CXXFLAGS="${CFLAGS_X64}"
 export CROSSCFLAGS="${CROSSCFLAGS_X64}"
 export CROSSCXXFLAGS="${CROSSCFLAGS_X64}"
 
+# The bootstrap's GStreamer build ships an old FFmpeg in /usr/local/lib/x86_64-linux-gnu,
+# whose pkg-config files are found first; make Wine use the FFmpeg we bundle instead.
+export PKG_CONFIG_PATH="/usr/local/lib/pkgconfig${PKG_CONFIG_PATH:+:${PKG_CONFIG_PATH}}"
+
 mkdir "${BUILD_DIR}"/build64
 cd "${BUILD_DIR}"/build64 || exit
 ${BWRAP64} "${BUILD_DIR}"/wine/configure ${WINE_BUILD_OPTIONS} --prefix "${BUILD_DIR}"/wine-"${BUILD_NAME}"-amd64
@@ -413,6 +417,13 @@ for build in ${builds_list}; do
 				exit 1
 			fi
 			cp -a "${BOOTSTRAP_X64}"/usr/local/lib/lib{avformat,avcodec,avutil,swresample}.so.* "${unixdir}"/ 2>/dev/null
+			# Every FFmpeg library winedmo.so needs must be one we bundle (same soname).
+			for lib in $(readelf -d "${unixdir}"/winedmo.so | sed -n 's/.*Shared library: \[\(lib\(av\|sw\)[a-z]*\.so\.[0-9]*\)\]/\1/p'); do
+				if [ ! -e "${unixdir}/${lib}" ]; then
+					echo "winedmo.so needs ${lib}, which isn't the bundled FFmpeg"
+					exit 1
+				fi
+			done
 			for f in "${unixdir}"/lib{avformat,avcodec,avutil,swresample}.so.*; do
 				[ -f "$f" ] && [ ! -L "$f" ] && strip --strip-unneeded "$f"
 			done
