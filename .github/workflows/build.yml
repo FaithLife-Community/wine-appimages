@@ -223,7 +223,9 @@ jobs:
                        --jq ".[] | select(.tag_name == \"$tag\") | .draft")
           case "$existing" in
             "") ;;
-            true) gh release delete "$tag" --cleanup-tag --yes --repo "$GITHUB_REPOSITORY" ;;
+            # A draft has no git tag yet, so --cleanup-tag would fail; drop a stray tag separately.
+            true) gh release delete "$tag" --yes --repo "$GITHUB_REPOSITORY"
+                  gh api -X DELETE "repos/$GITHUB_REPOSITORY/git/refs/tags/$tag" 2>/dev/null || true ;;
             *) echo "::error::release $tag is already published; choose a new label (published releases are never replaced)"
                exit 1 ;;
           esac
