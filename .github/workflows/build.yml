@@ -27,6 +27,10 @@ on:
         description: "Version for the file names; empty = the VERSION of the branch"
         default: ""
         required: false
+      bootstraps_run:
+        description: "Bootstraps CI run id to take the chroots from; empty = the latest successful run"
+        default: ""
+        required: false
 
 permissions:
   contents: write   # publish the release
@@ -63,6 +67,7 @@ jobs:
         with:
           workflow: bootstraps.yml
           workflow_conclusion: success
+          run_id: ${{ inputs.bootstraps_run }}
           name: Bootstraps
           path: /opt/Bootstraps
 
