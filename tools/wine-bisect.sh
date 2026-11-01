@@ -1,18 +1,22 @@
 #!/usr/bin/env bash
-# wine-bisect.sh — unattended "does Logos still launch?" regression hunting for Wine.
+# wine-bisect.sh — unattended Wine regression hunting with swappable tests.
 #
 # Builds Wine from a dedicated clone (~/Documents/GitHub/wine-mirror) at each bisect step,
-# runs Logos from a known-good OuDedetai install (directly in its bottle by default),
-# waits, checks Logos is alive with a visible window and no crash dialog, closes it
-# gracefully, and reports good/bad to `git bisect run`. Build failures are skipped (125);
-# harness failures abort (255) so a broken environment is never blamed on a Wine commit.
+# prepares a Wine prefix, runs a TEST against it and reports good/bad to `git bisect run`.
+# Build failures are skipped (125); harness failures abort (255), so a broken environment
+# is never blamed on a Wine commit.
+#
+# The test decides what "good" means. Tests live in bisect-tests/ next to this script;
+# choose one with TEST=<name> in the config or environment (default: logos-starts).
+# See bisect-tests/README.md for the available tests and how to write one.
 #
 # Usage:
-#   wine-bisect.sh setup                           clone/update wine-mirror, create work dir, check tools
-#   wine-bisect.sh settle                          run Logos once in the snapshot itself until the indexer
-#                                                  finishes, so test runs don't re-index every time
+#   wine-bisect.sh setup                           clone/update wine-mirror, check tools
+#   wine-bisect.sh tests                           list the available tests
+#   wine-bisect.sh settle                          let the test prepare the prefix once, if it
+#                                                  needs to (logos-starts: finish indexing)
 #   wine-bisect.sh test-wine [AppImage|wine-dir]   test a prebuilt Wine, no build. No argument =
-#                                                  the snapshot install's own bin/ Wine (sanity check)
+#                                                  the install's own bin/ Wine (sanity check)
 #   wine-bisect.sh run <good-ref> <bad-ref>        verify both ends, then bisect unattended
 #   wine-bisect.sh test                            build + test current checkout (git bisect run calls this)
 #   wine-bisect.sh status                          show paths, bisect state and results so far
@@ -21,9 +25,9 @@
 #
 # Where things live (all overridable in the config):
 #   ~/Documents/GitHub/wine-mirror   dedicated Wine clone; bisect state lives here only
-#   ~/wine-bisect-prefix             your copied OuDedetai install, plus this script and its
-#                                    config; Logos runs directly in its data/wine64_bottle
-#   ~/.cache/wine-bisect/            build tree, logs, summary.tsv (and scratch copies if PREFIX_MODE≠inplace)
+#   ~/wine-bisect-prefix             a copied OuDedetai install (or any folder with a Wine
+#                                    prefix), plus this script, bisect-tests/ and the config
+#   ~/.cache/wine-bisect/            build tree, logs, summary.tsv (and scratch prefixes)
 # Config is read from $WINE_BISECT_CONF, else wine-bisect.conf next to this script,
 # else ~/.config/wine-bisect/wine-bisect.conf.
 
@@ -43,39 +47,29 @@ fi
 [[ -n $CONF && -f $CONF ]] && source "$CONF"
 
 # defaults — applied after the config so derived paths follow overrides
+: "${TEST:=logos-starts}"               # test name in bisect-tests/, or a path to a test file
 : "${GITHUB_DIR:=$HOME/Documents/GitHub}"
 : "${WINE_SRC:=$GITHUB_DIR/wine-mirror}"
 : "${UPSTREAM_URL:=https://gitlab.winehq.org/wine/wine.git}"
 : "${REFERENCE_REPO:=}"                 # optional existing local wine clone to copy objects from (fast, then dissociated)
-# copied OuDedetai install folder (has data/ and bin/). If this script lives in it, that's the default.
+# install folder (an OuDedetai install has data/ and bin/). If this script lives in it, that's the default.
 if [[ -d $SCRIPT_DIR/data/wine64_bottle ]]; then : "${INSTALL_DIR:=$SCRIPT_DIR}"; fi
 : "${INSTALL_DIR:=$HOME/wine-bisect-prefix}"
 : "${PRISTINE_PREFIX:=}"                # derived from INSTALL_DIR if empty
 : "${WORK_DIR:=${XDG_CACHE_HOME:-$HOME/.cache}/wine-bisect}"
 : "${BUILD_DIR:=$WORK_DIR/build}"
 : "${MAKE_JOBS:=$(nproc)}"
-: "${PREFIX_MODE:=inplace}"             # inplace = run Logos in the bottle itself (default);
-                                        # overlay | copy = throwaway copy per run (Logos re-indexes in these)
-: "${LOGOS_EXE_REL:=drive_c/users/*/AppData/Local/Logos/Logos.exe}"
-: "${LAUNCH_WAIT:=60}"
-: "${POLL_INTERVAL:=5}"
-: "${EARLY_FAIL_POLLS:=3}"
-: "${REQUIRE_WINDOW:=1}"
-: "${WINDOW_REGEX:=Logos}"
-: "${RUNS:=2}"
-: "${SHUTDOWN_WAIT:=45}"
-: "${INDEXER_REGEX:=LogosIndexer\.exe}"
-: "${INDEXER_WAIT:=600}"                # max seconds to wait for the indexer to exit before closing Logos
-: "${SETTLE_WAIT:=7200}"                # max seconds `settle` waits for a full index
-: "${WINEBOOT:=1}"                      # 0 = skip the explicit wineboot -u (Wine then updates the prefix implicitly at launch)
+: "${PREFIX_MODE:=inplace}"             # inplace = use the prefix itself (default);
+                                        # overlay | copy = throwaway copy per run
+: "${RUNS:=2}"                          # attempts per step; good on the first pass, bad if all fail
+: "${WINEBOOT:=1}"                      # 0 = skip the explicit wineboot -u (Wine then updates the prefix implicitly)
 : "${WINEBOOT_TIMEOUT:=300}"
 : "${USE_XVFB:=0}"
 : "${VERIFY_ENDPOINTS:=1}"
 declare -p CONFIGURE_ARGS >/dev/null 2>&1 || CONFIGURE_ARGS=(--enable-archs=i386,x86_64 --disable-tests)
-declare -p LOGOS_ARGS     >/dev/null 2>&1 || LOGOS_ARGS=()
 declare -p EXTRA_ENV      >/dev/null 2>&1 || EXTRA_ENV=(WINEDEBUG=-all "WINEDLLOVERRIDES=winemenubuilder.exe=d")
 # Applied on top of EXTRA_ENV for the wineboot -u step only: stops the Wine Mono / Gecko
-# install prompts on every fresh scratch prefix. Logos itself launches with EXTRA_ENV alone.
+# install prompts. Tests run their programs with EXTRA_ENV alone.
 declare -p WINEBOOT_ENV   >/dev/null 2>&1 || WINEBOOT_ENV=("WINEDLLOVERRIDES=mscoree=;mshtml=;winemenubuilder.exe=d")
 
 if [[ -z $PRISTINE_PREFIX ]]; then
@@ -90,65 +84,18 @@ LOG_DIR="$WORK_DIR/logs"
 SUMMARY="$WORK_DIR/summary.tsv"
 MAIN_LOG="$WORK_DIR/bisect.log"
 STEP_LOG=/dev/null
+STEP_DIR=""
 WINE="" WINESERVER="" LAUNCH_PID="" XVFB_PID=""
+FAIL_REASON="" STEP_NOTE="-"
 
 mkdir -p "$WORK_DIR" "$LOG_DIR"
 
+# ---------- helpers (also used by tests) ----------
 log()   { printf '[%s] %s\n' "$(date '+%F %T')" "$*" | tee -a "$MAIN_LOG" >&2; [[ $STEP_LOG != /dev/null ]] && printf '### %s\n' "$*" >>"$STEP_LOG"; }
 abort() { log "ABORT: $*"; cleanup; exit $EXIT_ABORT; }
 have()  { command -v "$1" >/dev/null 2>&1; }
 
-# ---------- environment checks ----------
-check_common() {
-  [[ -d $PRISTINE_PREFIX/drive_c ]] || abort "no Wine prefix at $PRISTINE_PREFIX (set INSTALL_DIR or PRISTINE_PREFIX)"
-  compgen -G "$PRISTINE_PREFIX/$LOGOS_EXE_REL" >/dev/null || abort "Logos.exe not found at $PRISTINE_PREFIX/$LOGOS_EXE_REL"
-  case $PREFIX_MODE in inplace|overlay|copy) ;; *) abort "PREFIX_MODE must be inplace, overlay or copy" ;; esac
-  [[ $PREFIX_MODE == overlay ]] && ! have fuse-overlayfs && abort "PREFIX_MODE=overlay but fuse-overlayfs is not installed"
-  [[ $REQUIRE_WINDOW == 1 ]] && ! have xdotool && abort "REQUIRE_WINDOW=1 needs xdotool (or set REQUIRE_WINDOW=0)"
-  if [[ $USE_XVFB == 1 ]]; then
-    have Xvfb || abort "USE_XVFB=1 but Xvfb is not installed"
-    local d=:97
-    Xvfb "$d" -screen 0 1920x1080x24 -nolisten tcp >/dev/null 2>&1 &
-    XVFB_PID=$!; disown "$XVFB_PID"; export DISPLAY=$d; sleep 2
-    kill -0 "$XVFB_PID" 2>/dev/null || abort "Xvfb failed to start"
-  fi
-  [[ -n ${DISPLAY:-} ]] || abort "no DISPLAY — run from your desktop session or set USE_XVFB=1"
-}
-
-check_mirror() {
-  [[ -d $WINE_SRC/.git ]] || abort "no wine clone at $WINE_SRC — run '$0 setup' first"
-  [[ -f $WINE_SRC/.wine-bisect ]] || abort "$WINE_SRC was not created by '$0 setup' — refusing to bisect in another repo"
-}
-
-# ---------- scratch prefix ----------
-cleanup_prefix() {
-  [[ -d $RUN_DIR ]] || return 0
-  if mountpoint -q "$RUN_DIR/prefix" 2>/dev/null; then
-    fusermount -u "$RUN_DIR/prefix" 2>/dev/null || { sleep 2; fusermount -uz "$RUN_DIR/prefix" 2>/dev/null; }
-    # never rm -rf through a live mount
-    mountpoint -q "$RUN_DIR/prefix" 2>/dev/null && { log "ERROR: $RUN_DIR/prefix still mounted"; return 1; }
-  fi
-  case $RUN_DIR in "$WORK_DIR"/*) rm -rf --one-file-system "$RUN_DIR" ;; esac
-}
-
-setup_prefix() {
-  cleanup_prefix || return 1
-  if [[ $PREFIX_MODE == inplace ]]; then
-    export WINEPREFIX="$PRISTINE_PREFIX"
-    [[ -n $(prefix_pids 'Logos\.exe') ]] && abort "Logos is already running in $WINEPREFIX — close it first"
-    return 0
-  fi
-  mkdir -p "$RUN_DIR"
-  if [[ $PREFIX_MODE == overlay ]]; then
-    mkdir -p "$RUN_DIR"/{upper,work,prefix}
-    fuse-overlayfs -o "lowerdir=$PRISTINE_PREFIX,upperdir=$RUN_DIR/upper,workdir=$RUN_DIR/work" "$RUN_DIR/prefix" || return 1
-  else
-    cp -a --reflink=auto "$PRISTINE_PREFIX" "$RUN_DIR/prefix" || return 1
-  fi
-  export WINEPREFIX="$RUN_DIR/prefix"
-}
-
-# ---------- process helpers (scoped to our prefix only) ----------
+# PIDs of processes whose command line matches $1 AND that run in our prefix
 prefix_pids() {
   local pid
   for pid in $(pgrep -f -- "$1" 2>/dev/null); do
@@ -156,18 +103,36 @@ prefix_pids() {
   done
 }
 
-logos_window_visible() {
+# true once no wineserver runs for our prefix (an idle one lingers a few seconds after programs exit)
+prefix_idle() {
+  local t=0
+  while [[ -n $(prefix_pids 'wineserver') ]]; do (( t++ >= 15 )) && return 1; sleep 1; done
+  return 0
+}
+
+# visible X window owned by a process in our prefix whose command line matches $1, title matching $2
+window_visible() {
   local pid
-  for pid in $(prefix_pids 'Logos\.exe'); do
-    xdotool search --all --onlyvisible --pid "$pid" --name "$WINDOW_REGEX" >/dev/null 2>&1 && return 0
+  for pid in $(prefix_pids "$1"); do
+    xdotool search --all --onlyvisible --pid "$pid" --name "$2" >/dev/null 2>&1 && return 0
   done
   return 1
 }
 
-screenshot() {
+screenshot() {   # $1 = file
   if have import; then import -window root "$1" 2>/dev/null
   elif have grim; then grim "$1" 2>/dev/null
   fi
+}
+
+# run a Wine command in the foreground with EXTRA_ENV, output to the step log
+wine_run() { env "${EXTRA_ENV[@]}" "$WINE" "$@" >>"$STEP_LOG" 2>&1; }
+
+# start a Windows program in the background from its own folder; sets LAUNCH_PID
+wine_start() {   # $1 = program path (Unix), rest = arguments
+  local exe=$1; shift
+  ( cd "$(dirname "$exe")" && exec env "${EXTRA_ENV[@]}" "$WINE" "$exe" "$@" ) >>"$STEP_LOG" 2>&1 &
+  LAUNCH_PID=$!; disown "$LAUNCH_PID"
 }
 
 kill_wine() {
@@ -184,89 +149,111 @@ cleanup() {
   XVFB_PID=""
 }
 
-# wait for the indexer to exit; sets INDEXER_SECS (-1 = timed out)
-wait_for_indexer() {   # $1 = max seconds
-  local max=$1 t=0
-  INDEXER_SECS=0
-  [[ -z $(prefix_pids "$INDEXER_REGEX") ]] && return 0
-  log "indexer running — waiting up to ${max}s for it to finish"
-  while [[ -n $(prefix_pids "$INDEXER_REGEX") ]]; do
-    (( t >= max )) && { INDEXER_SECS=-1; log "indexer still running after ${max}s"; return 1; }
-    sleep 5; (( t += 5 ))
-    (( t % 300 == 0 )) && log "indexer still running (${t}s)"
-  done
-  INDEXER_SECS=$t; log "indexer finished after ~${t}s"
-  return 0
+# ---------- load the test ----------
+if [[ $TEST == */* ]]; then TEST_FILE=$(readlink -f "$TEST"); else TEST_FILE="$SCRIPT_DIR/bisect-tests/$TEST.sh"; fi
+if [[ -f $TEST_FILE ]]; then
+  TEST_NAME=$(basename "$TEST_FILE" .sh)
+  TEST_TOOLS=()
+  # shellcheck source=/dev/null
+  source "$TEST_FILE"
+  declare -F test_run >/dev/null || { echo "test $TEST_FILE does not define test_run" >&2; exit $EXIT_ABORT; }
+else
+  TEST_NAME="" TEST_FILE_MISSING=$TEST_FILE
+fi
+
+# ---------- environment checks ----------
+check_test_loaded() {
+  [[ -n $TEST_NAME ]] || abort "test '$TEST' not found ($TEST_FILE_MISSING) — keep bisect-tests/ next to $SCRIPT_PATH, or run '$0 tests'"
 }
 
-shutdown_logos() {
-  log "closing Logos gracefully"
-  env "${EXTRA_ENV[@]}" "$WINE" taskkill /IM Logos.exe >>"$STEP_LOG" 2>&1   # no /F → WM_CLOSE
-  local t=0
-  while [[ -n $(prefix_pids 'Logos\.exe') ]] && (( t < SHUTDOWN_WAIT )); do sleep 1; ((t++)); done
-  [[ -n $(prefix_pids 'Logos\.exe') ]] && log "Logos ignored close after ${SHUTDOWN_WAIT}s — forcing"
-  kill_wine
+check_common() {
+  check_test_loaded
+  [[ -d $PRISTINE_PREFIX/drive_c ]] || abort "no Wine prefix at $PRISTINE_PREFIX (set INSTALL_DIR or PRISTINE_PREFIX)"
+  case $PREFIX_MODE in inplace|overlay|copy) ;; *) abort "PREFIX_MODE must be inplace, overlay or copy" ;; esac
+  [[ $PREFIX_MODE == overlay ]] && ! have fuse-overlayfs && abort "PREFIX_MODE=overlay but fuse-overlayfs is not installed"
+  local t
+  for t in "${TEST_TOOLS[@]}"; do have "$t" || abort "test '$TEST_NAME' needs '$t' — install it, or see the test's settings"; done
+  if [[ $USE_XVFB == 1 ]]; then
+    have Xvfb || abort "USE_XVFB=1 but Xvfb is not installed"
+    local d=:97
+    Xvfb "$d" -screen 0 1920x1080x24 -nolisten tcp >/dev/null 2>&1 &
+    XVFB_PID=$!; disown "$XVFB_PID"; export DISPLAY=$d; sleep 2
+    kill -0 "$XVFB_PID" 2>/dev/null || abort "Xvfb failed to start"
+  fi
+  [[ -n ${DISPLAY:-} ]] || abort "no DISPLAY — run from your desktop session or set USE_XVFB=1"
+  if declare -F test_check >/dev/null; then test_check; fi
 }
 
-# ---------- one launch attempt: returns 0 pass / 1 fail; sets FAIL_REASON ----------
-run_once() {
-  local n=$1 shotdir=$2 exe t=0 missing=0 idx_seen=0
+check_mirror() {
+  [[ -d $WINE_SRC/.git ]] || abort "no wine clone at $WINE_SRC — run '$0 setup' first"
+  [[ -f $WINE_SRC/.wine-bisect ]] || abort "$WINE_SRC was not created by '$0 setup' — refusing to bisect in another repo"
+}
+
+# ---------- prefix ----------
+cleanup_prefix() {
+  [[ -d $RUN_DIR ]] || return 0
+  if mountpoint -q "$RUN_DIR/prefix" 2>/dev/null; then
+    fusermount -u "$RUN_DIR/prefix" 2>/dev/null || { sleep 2; fusermount -uz "$RUN_DIR/prefix" 2>/dev/null; }
+    # never rm -rf through a live mount
+    mountpoint -q "$RUN_DIR/prefix" 2>/dev/null && { log "ERROR: $RUN_DIR/prefix still mounted"; return 1; }
+  fi
+  case $RUN_DIR in "$WORK_DIR"/*) rm -rf --one-file-system "$RUN_DIR" ;; esac
+}
+
+setup_prefix() {
+  cleanup_prefix || return 1
+  if [[ $PREFIX_MODE == inplace ]]; then
+    export WINEPREFIX="$PRISTINE_PREFIX"
+    prefix_idle || abort "something is already running in $WINEPREFIX — close it first"
+    return 0
+  fi
+  mkdir -p "$RUN_DIR"
+  if [[ $PREFIX_MODE == overlay ]]; then
+    mkdir -p "$RUN_DIR"/{upper,work,prefix}
+    fuse-overlayfs -o "lowerdir=$PRISTINE_PREFIX,upperdir=$RUN_DIR/upper,workdir=$RUN_DIR/work" "$RUN_DIR/prefix" || return 1
+  else
+    cp -a --reflink=auto "$PRISTINE_PREFIX" "$RUN_DIR/prefix" || return 1
+  fi
+  export WINEPREFIX="$RUN_DIR/prefix"
+}
+
+# ---------- one attempt: prefix, wineboot, then the test ----------
+run_once() {   # $1 = attempt number
+  RUN_NO=$1
   FAIL_REASON="" STEP_NOTE="-"
   setup_prefix || abort "could not prepare prefix ($PREFIX_MODE)"
-  exe=$(compgen -G "$WINEPREFIX/$LOGOS_EXE_REL" | head -n1)
-  [[ -n $exe ]] || abort "Logos.exe missing in $WINEPREFIX"
   export WINESERVER
 
   if [[ $WINEBOOT == 1 ]]; then
-    log "run $n: wineboot -u"
+    log "run $RUN_NO: wineboot -u"
     if ! timeout "$WINEBOOT_TIMEOUT" env "${EXTRA_ENV[@]}" "${WINEBOOT_ENV[@]}" "$WINE" wineboot -u >>"$STEP_LOG" 2>&1; then
-      FAIL_REASON="wineboot failed or timed out"; kill_wine; return 1
+      FAIL_REASON="wineboot failed or timed out"; log "run $RUN_NO: FAIL — $FAIL_REASON"; kill_wine; return 1
     fi
     timeout 120 "$WINESERVER" -w >/dev/null 2>&1
   fi
 
-  log "run $n: launching Logos, waiting ${LAUNCH_WAIT}s"
-  ( cd "$(dirname "$exe")" && exec env "${EXTRA_ENV[@]}" "$WINE" "$exe" "${LOGOS_ARGS[@]}" ) >>"$STEP_LOG" 2>&1 &
-  LAUNCH_PID=$!; disown "$LAUNCH_PID"
-
-  while (( t < LAUNCH_WAIT )); do
-    sleep "$POLL_INTERVAL"; (( t += POLL_INTERVAL ))
-    if [[ -n $(prefix_pids 'winedbg') ]]; then FAIL_REASON="crash (winedbg) after ~${t}s"; break; fi
-    [[ -n $(prefix_pids "$INDEXER_REGEX") ]] && idx_seen=1
-    if [[ -z $(prefix_pids 'Logos\.exe') ]]; then
-      (( t >= 15 )) && (( ++missing >= EARLY_FAIL_POLLS )) && { FAIL_REASON="Logos exited after ~${t}s"; break; }
-    else
-      missing=0
-    fi
-  done
-
-  if [[ -z $FAIL_REASON ]]; then
-    if [[ -z $(prefix_pids 'Logos\.exe') ]]; then FAIL_REASON="Logos not running at ${LAUNCH_WAIT}s"
-    elif [[ $REQUIRE_WINDOW == 1 ]] && ! logos_window_visible; then FAIL_REASON="Logos running but no visible '$WINDOW_REGEX' window"
-    fi
-  fi
-  screenshot "$shotdir/run$n.png"
-
-  if [[ -z $FAIL_REASON ]]; then
-    log "run $n: PASS"
-    wait_for_indexer "$INDEXER_WAIT"
-    if   (( INDEXER_SECS < 0 ));                 then STEP_NOTE="indexer still running after ${INDEXER_WAIT}s"
-    elif (( INDEXER_SECS > 30 ));                then STEP_NOTE="indexer ran ~$(( LAUNCH_WAIT + INDEXER_SECS ))s — snapshot may need '$0 settle'"
-    elif (( idx_seen || INDEXER_SECS > 0 ));     then STEP_NOTE="indexer: quick"
-    fi
-    shutdown_logos; return 0
-  fi
-  log "run $n: FAIL — $FAIL_REASON"; kill_wine; return 1
+  local rc
+  log "run $RUN_NO: test '$TEST_NAME'"
+  test_run; rc=$?
+  kill_wine
+  case $rc in
+    0) if [[ $STEP_NOTE == - ]]; then log "run $RUN_NO: PASS"; else log "run $RUN_NO: PASS ($STEP_NOTE)"; fi
+       return 0 ;;
+    1) [[ -n $FAIL_REASON ]] || FAIL_REASON="test failed"
+       log "run $RUN_NO: FAIL — $FAIL_REASON"; return 1 ;;
+    *) abort "test '$TEST_NAME' returned $rc (${FAIL_REASON:-no reason}) — that's a test problem, not a Wine result" ;;
+  esac
 }
 
 test_current_wine() {   # $1 = label, $2 = step dir
-  local label=$1 dir=$2 n
+  local label=$1 n
+  STEP_DIR=$2
   for (( n = 1; n <= RUNS; n++ )); do
-    if run_once "$n" "$dir"; then
-      printf '%s\t%s\tGOOD\t%s\n' "$(date '+%F %T')" "$label" "$STEP_NOTE" >>"$SUMMARY"; return 0
+    if run_once "$n"; then
+      printf '%s\t%s\t%s\tGOOD\t%s\n' "$(date '+%F %T')" "$TEST_NAME" "$label" "$STEP_NOTE" >>"$SUMMARY"; return 0
     fi
   done
-  printf '%s\t%s\tBAD\t%s\n' "$(date '+%F %T')" "$label" "$FAIL_REASON" >>"$SUMMARY"
+  printf '%s\t%s\t%s\tBAD\t%s\n' "$(date '+%F %T')" "$TEST_NAME" "$label" "$FAIL_REASON" >>"$SUMMARY"
   return 1
 }
 
@@ -331,11 +318,24 @@ cmd_setup() {
   echo "install: $INSTALL_DIR"
   echo "prefix:  $PRISTINE_PREFIX $( [[ -d $PRISTINE_PREFIX/drive_c ]] && echo '(ok)' || echo '(NOT FOUND)')"
   echo "work:    $WORK_DIR"
+  echo "test:    ${TEST_NAME:-NOT FOUND ($TEST)}"
   echo "config:  ${CONF:-none (using defaults)}"
   local missing=() t
-  for t in xdotool fuse-overlayfs ccache import; do have "$t" || missing+=("$t"); done
-  (( ${#missing[@]} )) && echo "optional tools missing: ${missing[*]} (xdotool needed unless REQUIRE_WINDOW=0; import is from imagemagick)"
+  for t in "${TEST_TOOLS[@]}"; do have "$t" || missing+=("$t"); done
+  (( ${#missing[@]} )) && echo "needed by the test but missing: ${missing[*]}"
+  missing=()
+  for t in fuse-overlayfs ccache import; do have "$t" || missing+=("$t"); done
+  (( ${#missing[@]} )) && echo "optional tools missing: ${missing[*]} (import is from imagemagick, for screenshots)"
   return 0
+}
+
+cmd_tests() {
+  local f
+  echo "available tests (choose with TEST=<name>; current: ${TEST_NAME:-$TEST}):"
+  for f in "$SCRIPT_DIR"/bisect-tests/*.sh; do
+    [[ -f $f ]] || continue
+    printf '  %-16s %s\n' "$(basename "$f" .sh)" "$(sed -n 's/^# *DESCRIPTION: *//p' "$f" | head -n1)"
+  done
 }
 
 cmd_test() {
@@ -348,7 +348,7 @@ cmd_test() {
   log "=== $commit $subject ==="
   if ! build_wine; then
     log "build failed → skip"
-    printf '%s\t%s\tSKIP\tbuild failed\n' "$(date '+%F %T')" "$commit" >>"$SUMMARY"
+    printf '%s\t%s\t%s\tSKIP\tbuild failed\n' "$(date '+%F %T')" "$TEST_NAME" "$commit" >>"$SUMMARY"
     cleanup; exit $EXIT_SKIP
   fi
   if test_current_wine "$commit" "$dir"; then cleanup; exit $EXIT_GOOD; fi
@@ -372,40 +372,27 @@ cmd_test_wine() {
   cleanup; echo "FAIL  $label — $FAIL_REASON"; exit 1
 }
 
-# Run Logos once IN the snapshot itself (the one deliberate write to it) with the install's
-# own Wine, let the indexer finish, close cleanly — so every scratch copy starts settled.
+# Let the test prepare the prefix itself, once, with the install's own Wine
+# (logos-starts: let the indexer finish so test runs don't re-index).
 cmd_settle() {
-  REQUIRE_WINDOW=0
   check_common
-  local dir="$LOG_DIR/settle" exe t=0
-  mkdir -p "$dir"; STEP_LOG="$dir/step.log"; : >"$STEP_LOG"
-  use_prebuilt "$(readlink -f "$INSTALL_DIR/bin")" "$dir" || abort "no usable Wine in $INSTALL_DIR/bin"
+  declare -F test_settle >/dev/null || { echo "test '$TEST_NAME' needs no settling"; return 0; }
+  STEP_DIR="$LOG_DIR/settle"; mkdir -p "$STEP_DIR"; STEP_LOG="$STEP_DIR/step.log"; : >"$STEP_LOG"
+  use_prebuilt "$(readlink -f "$INSTALL_DIR/bin")" "$STEP_DIR" || abort "no usable Wine in $INSTALL_DIR/bin"
   [[ -e $(readlink -f "$WINE") ]] || abort "$WINE is a broken link"
   export WINEPREFIX="$PRISTINE_PREFIX" WINESERVER
-  [[ -n $(prefix_pids 'Logos\.exe') ]] && abort "Logos is already running in the snapshot — close it first"
-  exe=$(compgen -G "$WINEPREFIX/$LOGOS_EXE_REL" | head -n1)
-  log "settle: launching Logos in the snapshot itself ($PRISTINE_PREFIX)"
-  ( cd "$(dirname "$exe")" && exec env "${EXTRA_ENV[@]}" "$WINE" "$exe" "${LOGOS_ARGS[@]}" ) >>"$STEP_LOG" 2>&1 &
-  LAUNCH_PID=$!; disown "$LAUNCH_PID"
-  log "settle: waiting up to 120s for the indexer to start"
-  while [[ -z $(prefix_pids "$INDEXER_REGEX") ]] && (( t < 120 )); do
-    [[ -z $(prefix_pids 'Logos\.exe') ]] && (( t >= 15 )) && abort "Logos exited during settle — see $STEP_LOG"
-    sleep 5; (( t += 5 ))
-  done
-  if [[ -z $(prefix_pids "$INDEXER_REGEX") ]]; then
-    log "settle: indexer never started — nothing to index"
-  else
-    wait_for_indexer "$SETTLE_WAIT" || { shutdown_logos; abort "indexer didn't finish within ${SETTLE_WAIT}s"; }
-  fi
-  shutdown_logos
-  WINEPREFIX=""   # keep cleanup away from the snapshot
-  log "settle: done — run '$0 test-wine' and check the indexer note in '$0 status'"
+  prefix_idle || abort "something is already running in $WINEPREFIX — close it first"
+  test_settle || { kill_wine; WINEPREFIX=""; abort "settle failed — see $STEP_LOG"; }
+  kill_wine
+  WINEPREFIX=""   # keep cleanup away from the real prefix
+  log "settle: done — now run '$0 test-wine'"
 }
 
 cmd_run() {
   local good=${1:-} bad=${2:-}
   [[ -n $good && -n $bad ]] || abort "usage: $0 run <good-ref> <bad-ref>"
   check_mirror
+  check_test_loaded
   exec 9>"$WORK_DIR/.lock"; flock -n 9 || abort "another bisect is already running"
   cd "$WINE_SRC" || abort "cannot cd to $WINE_SRC"
   [[ -z $(git status --porcelain --untracked-files=no) ]] || abort "wine-mirror has local changes — it should stay pristine"
@@ -413,7 +400,7 @@ cmd_run() {
 
   if [[ $VERIFY_ENDPOINTS == 1 ]]; then
     local orig rc; orig=$(git rev-parse HEAD)
-    log "verifying good end: $good"
+    log "verifying good end: $good (test '$TEST_NAME')"
     git checkout -q "$good" || abort "cannot check out $good"
     "$SCRIPT_PATH" test; rc=$?
     (( rc == 0 )) || { git checkout -q "$orig"; abort "good ref $good did not pass (exit $rc) — fix the harness or choose another good ref"; }
@@ -424,7 +411,7 @@ cmd_run() {
     git checkout -q "$orig"
   fi
 
-  log "starting bisect: good=$good bad=$bad (~$(git rev-list --count "$good..$bad") commits)"
+  log "starting bisect: good=$good bad=$bad test='$TEST_NAME' (~$(git rev-list --count "$good..$bad") commits)"
   git bisect start "$bad" "$good" || abort "git bisect start failed"
   git bisect run "$SCRIPT_PATH" test
   local rc=$?
@@ -438,6 +425,7 @@ cmd_run() {
 cmd_status() {
   echo "clone:   $WINE_SRC"
   echo "prefix:  $PRISTINE_PREFIX"
+  echo "test:    ${TEST_NAME:-NOT FOUND ($TEST)}"
   echo "work:    $WORK_DIR ($(du -sh "$WORK_DIR" 2>/dev/null | cut -f1))"
   if [[ -d $WINE_SRC/.git ]] && git -C "$WINE_SRC" bisect log >/dev/null 2>&1; then
     echo "bisect:  in progress, HEAD $(git -C "$WINE_SRC" log -1 --format='%h %s')"
@@ -445,12 +433,13 @@ cmd_status() {
   else
     echo "bisect:  none in progress"
   fi
-  [[ -f $SUMMARY ]] && { echo; echo "results:"; tail -n 20 "$SUMMARY"; }
+  [[ -f $SUMMARY ]] && { echo; echo "results (time, test, build, result, note):"; tail -n 20 "$SUMMARY"; }
   return 0
 }
 
 case ${1:-} in
   setup)     cmd_setup ;;
+  tests)     cmd_tests ;;
   settle)    cmd_settle ;;
   test)      cmd_test ;;
   test-wine) shift; cmd_test_wine "$@" ;;
@@ -460,5 +449,5 @@ case ${1:-} in
   purge)     WINESERVER=${WINESERVER:-wineserver}; export WINEPREFIX="$RUN_DIR/prefix"; cleanup
              case $BUILD_DIR in "$WORK_DIR"/*) rm -rf --one-file-system "$BUILD_DIR" ;; esac
              echo "removed build and scratch; logs kept in $LOG_DIR" ;;
-  *)         sed -n '2,30p' "$SCRIPT_PATH"; exit 2 ;;
+  *)         sed -n '2,33p' "$SCRIPT_PATH"; exit 2 ;;
 esac

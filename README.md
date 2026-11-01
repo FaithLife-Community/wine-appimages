@@ -24,7 +24,7 @@ by hand once it has been tested.
 | `.github/workflows/bootstraps.yml` | **Bootstraps CI**: builds the Ubuntu chroots Wine is compiled in. Runs monthly. |
 | `build/` | Scripts used by the workflows (`build_wine.sh`, `create_ubuntu_bootstraps.sh`) |
 | `appimage/` | AppImage recipe, launcher `wrapper` and icon |
-| `tools/wine-bisect.sh` | Finds which Wine commit broke Logos; see [docs/testing.md](docs/testing.md) |
+| `tools/wine-bisect.sh` | Finds which Wine commit broke something, using a swappable test from `tools/bisect-tests/`; see [docs/testing.md](docs/testing.md) |
 | `docs/` | How to build, patch and test |
 
 The build scripts and AppImage recipe came from mmtrt's Wine-Builds and WINE_AppImage
