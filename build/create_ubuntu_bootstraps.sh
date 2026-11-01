@@ -86,6 +86,7 @@ create_build_scripts () {
 	p11_kit_version="0.26.2"
 	libgpg_error_version="1.59"
 	libgcrypt_version="1.12.2"
+	ffmpeg_version="7.1.1"
 
 	cat <<EOF > "${MAINDIR}"/prepare_chroot.sh
 #!/bin/bash
@@ -116,6 +117,7 @@ apt-get -y install libjpeg62-dev samba-dev libffi-dev
 apt-get -y install libpcsclite-dev libcups2-dev
 apt-get -y install python3-pip libxcb-xkb-dev libbz2-dev texinfo curl
 apt-get -y install graphviz xmlto --no-install-recommends
+apt-get -y install nasm zlib1g-dev
 apt-get -y purge libvulkan-dev libvulkan1 libsdl2-dev libsdl2-2.0-0 libpcap0.8-dev libpcap0.8 --purge --autoremove
 apt-get -y purge *gstreamer* --purge --autoremove
 apt-get -y clean
@@ -151,6 +153,8 @@ sleep 5
 wget -O p11-kit.tar.xz https://github.com/p11-glue/p11-kit/releases/download/${p11_kit_version}/p11-kit-${p11_kit_version}.tar.xz
 wget -O libgpg-error.tar.bz2 https://www.gnupg.org/ftp/gcrypt/libgpg-error/libgpg-error-${libgpg_error_version}.tar.bz2
 wget -O libgcrypt.tar.bz2 https://www.gnupg.org/ftp/gcrypt/libgcrypt/libgcrypt-${libgcrypt_version}.tar.bz2
+wget -O ffmpeg.tar.xz https://ffmpeg.org/releases/ffmpeg-${ffmpeg_version}.tar.xz
+echo "26f2bd7d20c6c616f31d7130c88d7250  ffmpeg.tar.xz" | md5sum -c - || exit 1
 sleep 5
 wget -O /usr/include/linux/ntsync.h https://raw.githubusercontent.com/zen-kernel/zen-kernel/refs/heads/6.15/main/include/uapi/linux/ntsync.h
 sleep 5
@@ -178,6 +182,7 @@ tar xf nettle.tar.gz
 tar xf p11-kit.tar.xz
 tar xf libgpg-error.tar.bz2
 tar xf libgcrypt.tar.bz2
+tar xf ffmpeg.tar.xz
 tar xf meson.tar.gz -C /usr/local
 ln -s /usr/local/meson-${meson_version}/meson.py /usr/local/bin/meson
 bash mingw-w64-build x86_64
@@ -251,6 +256,19 @@ make -j$(nproc) install
 cd ../libgcrypt-${libgcrypt_version}
 ./configure
 make -j$(nproc) install
+# FFmpeg for winedmo (Wine's Media Foundation demuxer); 64-bit only, because the
+# WoW64 build has no 32-bit Unix side. Demuxing needs only libavformat, libavcodec
+# and libavutil, so encoders, muxers, filters, devices and network are left out.
+# LGPL (no --enable-gpl). build_wine.sh bundles these libraries next to winedmo.so.
+if [ -d /usr/lib/x86_64-linux-gnu ]; then
+cd ../ && rm -rf build && mkdir build && cd build
+../ffmpeg-${ffmpeg_version}/configure --prefix=/usr/local --enable-shared --disable-static \
+	--disable-programs --disable-doc --disable-debug --disable-autodetect --enable-zlib \
+	--disable-avdevice --disable-avfilter --disable-swscale --disable-network \
+	--disable-encoders --disable-muxers --disable-hwaccels --disable-indevs --disable-outdevs
+make -j$(nproc) install
+apt-get -y purge nasm
+fi
 cd /opt && rm -r /opt/build_libs
 EOF
 

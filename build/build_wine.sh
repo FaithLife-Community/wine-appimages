@@ -83,9 +83,11 @@ export DO_NOT_COMPILE="false"
 # By default it has a 5 GB limit for its cache size.
 #
 # Make sure that ccache is installed before enabling this.
-export USE_CCACHE="false"
+export USE_CCACHE="${USE_CCACHE:-false}"
 
-export WINE_BUILD_OPTIONS="--without-oss --disable-winemenubuilder --disable-tests --enable-archs=x86_64,i386"
+# NASM=false: bionic's nasm (2.13) can't build Wine's bundled PE FFmpeg (its -I paths
+# need a trailing slash), so build that without assembly, as before nasm was installed.
+export WINE_BUILD_OPTIONS="--without-oss --disable-winemenubuilder --disable-tests --enable-archs=x86_64,i386 NASM=false"
 
 # A temporary directory where the Wine source code will be stored.
 # Do not set this variable to an existing non-empty directory!
@@ -132,6 +134,14 @@ if [ "$USE_CCACHE" = "true" ]; then
 
 	mkdir -p "${XDG_CACHE_HOME}"/ccache
 	mkdir -p "${HOME}"/.ccache
+
+	# Use one cache directory, and compare compilers by content: the bootstraps are
+	# unpacked afresh for each CI run, so their timestamps always change.
+	export CCACHE_DIR="${CCACHE_DIR:-${XDG_CACHE_HOME}/ccache}"
+	export CCACHE_COMPILERCHECK=content
+	export CCACHE_BASEDIR="${BUILD_DIR}"
+	export CCACHE_NOHASHDIR=true
+	export CCACHE_MAXSIZE="${CCACHE_MAXSIZE:-3G}"
 fi
 
 build_with_bwrap () {
@@ -345,10 +355,15 @@ export CXXFLAGS="${CFLAGS_X64}"
 export CROSSCFLAGS="${CROSSCFLAGS_X64}"
 export CROSSCXXFLAGS="${CROSSCFLAGS_X64}"
 
+# The bootstrap's GStreamer build ships an old FFmpeg in /usr/local/lib/x86_64-linux-gnu,
+# whose pkg-config files are found first; make Wine use the FFmpeg we bundle instead.
+export PKG_CONFIG_PATH="/usr/local/lib/pkgconfig${PKG_CONFIG_PATH:+:${PKG_CONFIG_PATH}}"
+
 mkdir "${BUILD_DIR}"/build64
 cd "${BUILD_DIR}"/build64 || exit
 ${BWRAP64} "${BUILD_DIR}"/wine/configure ${WINE_BUILD_OPTIONS} --prefix "${BUILD_DIR}"/wine-"${BUILD_NAME}"-amd64
 ${BWRAP64} make -j$(nproc) install
+
 
 echo
 echo "Compilation complete"
@@ -387,6 +402,45 @@ for build in ${builds_list}; do
 		# strip files
 		strip ./"${build}"/bin/w*
 		find ./"${build}"/lib/wine/*-unix -type f -name '*' -exec strip {} \;
+
+		# winedmo (Wine's Media Foundation demuxer) links to FFmpeg. Bundle the bootstrap's
+		# FFmpeg libraries next to it and point its RUNPATH there, so the build doesn't
+		# depend on whichever FFmpeg (and soname) the host has.
+		unixdir="${build}"/lib/wine/x86_64-unix
+		if ls "${BOOTSTRAP_X64}"/usr/local/lib/libavformat.so.* >/dev/null 2>&1; then
+			if ! command -v patchelf >/dev/null; then
+				echo "patchelf is required to bundle FFmpeg"
+				exit 1
+			fi
+			if ! readelf -d "${unixdir}"/winedmo.so 2>/dev/null | grep -q 'libavformat'; then
+				echo "FFmpeg is in the bootstrap but winedmo.so wasn't built with it"
+				exit 1
+			fi
+			cp -a "${BOOTSTRAP_X64}"/usr/local/lib/lib{avformat,avcodec,avutil,swresample}.so.* "${unixdir}"/ 2>/dev/null
+			# Every FFmpeg library winedmo.so needs must be one we bundle (same soname).
+			for lib in $(readelf -d "${unixdir}"/winedmo.so | sed -n 's/.*Shared library: \[\(lib\(av\|sw\)[a-z]*\.so\.[0-9]*\)\]/\1/p'); do
+				if [ ! -e "${unixdir}/${lib}" ]; then
+					echo "winedmo.so needs ${lib}, which isn't the bundled FFmpeg"
+					exit 1
+				fi
+			done
+			for f in "${unixdir}"/lib{avformat,avcodec,avutil,swresample}.so.*; do
+				[ -f "$f" ] && [ ! -L "$f" ] && strip --strip-unneeded "$f"
+			done
+			for f in "${unixdir}"/winedmo.so "${unixdir}"/lib{avformat,avcodec,avutil,swresample}.so.*; do
+				[ -f "$f" ] && [ ! -L "$f" ] && patchelf --set-rpath '$ORIGIN' "$f"
+			done
+			ffver=$(sed -n 's/^#define FFMPEG_VERSION "\(.*\)"/\1/p' "${BOOTSTRAP_X64}"/usr/local/include/libavutil/ffversion.h 2>/dev/null)
+			cat > "${unixdir}"/FFMPEG-README.txt <<-FFEOF
+			These libav* libraries are FFmpeg ${ffver:-unknown}, unmodified, built as shared libraries
+			under the GNU LGPL 2.1 or later; the licence text is in COPYING.LGPL-2.1 here.
+			Source: https://ffmpeg.org/releases/ffmpeg-${ffver}.tar.xz
+			Build recipe: build/create_ubuntu_bootstraps.sh in
+			https://github.com/FaithLife-Community/wine-appimages
+			FFEOF
+			cp wine/COPYING.LIB "${unixdir}"/COPYING.LGPL-2.1
+			echo "Bundled FFmpeg: $(cd "${unixdir}" && ls lib{avformat,avcodec,avutil,swresample}.so.* 2>/dev/null | tr '\n' ' ')"
+		fi
 
 		tar -Jcf "${build}".tar.xz "${build}"
 		mv "${build}".tar.xz "${result_dir}"
