@@ -1,0 +1,9 @@
+#!/bin/sh
+set -eu
+
+# Resolve the installed file, retaining the invocation name for OD's symlinks.
+entry=$(readlink -f -- "$0")
+APPDIR=$(CDPATH='' cd -- "$(dirname -- "$entry")/.." && pwd)
+export APPDIR
+export ARGV0="${0##*/}"
+exec "$APPDIR/AppRun" "$@"

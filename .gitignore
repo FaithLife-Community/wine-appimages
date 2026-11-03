@@ -4,3 +4,5 @@
 /appimage/appimage-build/
 /squashfs-root/
 /out/
+
+__pycache__/

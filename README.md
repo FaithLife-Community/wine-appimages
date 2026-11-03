@@ -49,6 +49,14 @@ When a build is from a Wine commit between releases, Wine still reports the
 previous release number, so put the commit in the label (`logosc37cb58` = based
 on upstream commit `c37cb58e`).
 
+## Runtime entry points
+
+AppImages support OD's `wine`, `wine64`, `wineserver`, and `winetricks` symlinks.
+The extracted bundle provides the same commands in `bin/`, routed through its
+packaged runtime environment. Winetricks 20260125 is bundled at a pinned checksum;
+`winetricks -q arial` invokes that script, never Wine's Windows program loader.
+Builds check both packaged forms before creating a draft release.
+
 ## Licences
 
 The build scripts come from mmtrt's projects, both MIT licensed; see

@@ -1,5 +1,30 @@
 # Testing
 
+## Runtime dispatch checks
+
+Run the launcher regression tests without compiling Wine:
+
+```bash
+python3 -m unittest discover -s tests -v
+```
+
+The build also checks the finished AppImage through an OD-style `winetricks`
+symlink and the extracted bundle through `bin/winetricks`. Both must report
+Winetricks 20260125, rather than passing its arguments to Wine's Windows loader.
+The bundle supplies `bin/wine`, `bin/wine64`, and `bin/wineserver` entry points
+that retain the packaged runtime environment. A missing Winetricks script is a
+packaging error; OD does not substitute a separate host copy.
+
+To run the same checks manually:
+
+```bash
+bash tests/check-packaged-runtime.sh /path/to/wine.AppImage /path/to/extracted.bundle
+```
+
+These checks exercise dispatch, not Microsoft's font-download servers. After
+selecting the runtime in a disposable OD installation, also confirm that
+`oudedetai --winetricks -q arial` completes and Logos launches.
+
 ## Trying an AppImage with Logos
 
 Download the `.AppImage` from the release, make it executable, and point OuDedetai

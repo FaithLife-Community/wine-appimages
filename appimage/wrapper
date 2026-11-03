@@ -39,14 +39,33 @@ if [ "$#" -eq 0 ]; then
   APPLICATION="winecfg"
 fi
 
-# Allow the AppImage to be symlinked to e.g., /usr/bin/wineserver
-if [ -n "${APPIMAGE:-}" ] && [ -n "${ARGV0:-}" ]; then
-  BINARY_NAME=$(basename "$ARGV0")
-else
-  BINARY_NAME=$(basename "$0")
-fi
+# Both the AppImage runtime and the extracted bundle's entry points set ARGV0.
+BINARY_NAME=$(basename "${ARGV0:-$0}")
+case "$BINARY_NAME" in
+  wine|wine64|wineserver|winetricks) ;;
+  *)
+    case "${1:-}" in
+      wine|wine64|wineserver|winetricks) BINARY_NAME=$1; shift ;;
+    esac
+    ;;
+esac
 
-if [ -n "${1:-}" ] && [ -e "$APPDIR/bin/$1" ]; then
+if [ "$BINARY_NAME" = "winetricks" ]; then
+  # Never send Winetricks options such as '-q arial' to Wine's Windows loader.
+  MAIN="$APPDIR/usr/libexec/winetricks"
+  APPLICATION=""
+  if [ ! -x "$MAIN" ]; then
+    echo "Bundled Winetricks is missing or not executable: $MAIN" >&2
+    exit 127
+  fi
+elif [ "$BINARY_NAME" = "wineserver" ]; then
+  MAIN="$APPDIR/usr/bin/wineserver"
+  APPLICATION=""
+elif [ "$BINARY_NAME" = "wine64" ] && [ -x "$APPDIR/usr/bin/wine64" ]; then
+  MAIN="$APPDIR/usr/bin/wine64"
+elif [ "$BINARY_NAME" = "wine" ] || [ "$BINARY_NAME" = "wine64" ]; then
+  MAIN="$APPDIR/usr/bin/wine"
+elif [ -n "${1:-}" ] && [ -e "$APPDIR/bin/$1" ]; then
   MAIN="$APPDIR/bin/$1"; shift
 elif [ -n "${1:-}" ] && [ -e "$APPDIR/usr/bin/$1" ]; then
   MAIN="$APPDIR/usr/bin/$1"; shift

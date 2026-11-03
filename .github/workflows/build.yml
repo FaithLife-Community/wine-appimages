@@ -48,6 +48,7 @@ jobs:
     outputs:
       tarball: ${{ steps.build.outputs.tarball }}
       version: ${{ steps.build.outputs.version }}
+      commit: ${{ steps.build.outputs.commit }}
 
     steps:
       - name: Check the label
@@ -61,6 +62,9 @@ jobs:
           fi
 
       - uses: actions/checkout@v4
+
+      - name: Test runtime dispatcher
+        run: python3 -m unittest discover -s tests -v
 
       - name: Download bootstraps artifact
         uses: dawidd6/action-download-artifact@v3
@@ -186,6 +190,7 @@ jobs:
           # Named "<name>.bundle.tar.xz" so it sorts after "<name>.AppImage": GitHub lists a
           # release's assets by name, and OuDedetai downloads the first one.
           cp -a appimage/AppDir "$name.bundle"
+          bash tests/check-packaged-runtime.sh "out/$name.AppImage" "$name.bundle"
           tar -cf - "$name.bundle" | xz -T0 -9 > "out/$name.bundle.tar.xz"
           ls -l out
 
@@ -211,10 +216,13 @@ jobs:
           IN_WINE_REPO: ${{ inputs.wine_repo }}
           IN_WINE_BRANCH: ${{ inputs.wine_branch }}
           VERSION: ${{ needs.wine.outputs.version }}
+          WINE_COMMIT: ${{ needs.wine.outputs.commit }}
         run: |
           # Same <version>-<branch> style as the older releases; OuDedetai reads the tag as the version.
           tag="${VERSION}-${IN_LABEL}"
           notes="Untested build of Wine ${VERSION} from ${IN_WINE_REPO} branch ${IN_WINE_BRANCH}.
+          Wine source commit: ${WINE_COMMIT}. Packaging commit: ${GITHUB_SHA}.
+          Includes Winetricks 20260125 (pinned and checksum-verified), with tested winetricks/wine/wine64/wineserver entry points for OD in both the AppImage and extracted bundle.
           The AppImage, plus a tarball of the same bundled folder for systems without FUSE.
           See docs/building.md for testing and publishing."
           # Only replace an earlier build with this tag while it is still a draft. A published
