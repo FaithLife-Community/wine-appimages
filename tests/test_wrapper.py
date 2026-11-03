@@ -101,6 +101,21 @@ class TestRuntimeDispatch(unittest.TestCase):
                 self.assertEqual(result['args'], args)
                 self.assertEqual(result['prefix'], self.env['WINEPREFIX'])
 
+    def test_install_entries_after_builder_has_removed_bin(self):
+        (self.appdir / 'bin').rmdir()
+        subprocess.run(['bash', str(ROOT / 'appimage/add-entry-points.sh'), str(self.appdir)], check=True)
+        for entry in ('wine', 'wine64', 'wineserver', 'winetricks'):
+            self.assertTrue(os.access(self.appdir / 'bin' / entry, os.X_OK))
+
+    def test_install_entries_preserves_loader_with_merged_usr_layout(self):
+        (self.appdir / 'bin').rmdir()
+        (self.appdir / 'bin').symlink_to('usr/bin')
+        original = (self.appdir / 'usr/bin/wine').read_bytes()
+        subprocess.run(['bash', str(ROOT / 'appimage/add-entry-points.sh'), str(self.appdir)], check=True)
+        self.assertFalse((self.appdir / 'bin').is_symlink())
+        self.assertEqual((self.appdir / 'usr/bin/wine').read_bytes(), original)
+        self.assertTrue(os.access(self.appdir / 'bin/winetricks', os.X_OK))
+
 
 if __name__ == '__main__':
     unittest.main()

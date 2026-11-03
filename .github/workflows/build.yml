@@ -180,6 +180,7 @@ jobs:
           mkdir -p out
           (cd appimage && ../squashfs-root/AppRun --skip-appimage --recipe recipe.yml)
 
+          bash appimage/add-entry-points.sh appimage/AppDir
           export ARCH="$(uname -m)"
           export APPIMAGE_EXTRACT_AND_RUN=1
           export URUNTIME_PRELOAD=0
