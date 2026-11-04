@@ -121,6 +121,37 @@ apt-get -y purge *gstreamer* --purge --autoremove
 apt-get -y clean
 apt-get -y autoclean
 export PATH="/usr/local/bin:\${PATH}"
+# Downloads a GitHub URL. A 429 is retried up to 10 times after the server's
+# wait (Retry-After, else x-ratelimit-reset, else 60s; capped at 600s).
+github_fetch () {
+	local url="\$1" out="\$2" log retry status wait reset
+	case "\$url" in
+		https://github.com/*|https://*.githubusercontent.com/*) ;;
+		*) echo "github_fetch: not a GitHub URL: \$url" >&2; return 1 ;;
+	esac
+	log=\$(mktemp)
+	for retry in \$(seq 0 10); do
+		if wget -4 --tries=3 --timeout=180 -S -O "\$out" "\$url" 2>"\$log"; then
+			cat "\$log" >&2; rm -f "\$log"; return 0
+		fi
+		cat "\$log" >&2
+		sed -i 's/\r\$//' "\$log"
+		status=\$(grep -oE '^ *HTTP/[0-9.]+ [0-9]{3}' "\$log" | tail -1 | awk '{print \$2}')
+		if [ "\$status" != 429 ] || [ "\$retry" = 10 ]; then
+			rm -f "\$log"; return 1
+		fi
+		wait=\$(grep -iE '^ *retry-after: *[0-9]+ *\$' "\$log" | tail -1 | tr -dc 0-9)
+		if [ -z "\$wait" ]; then
+			reset=\$(grep -iE '^ *x-ratelimit-reset: *[0-9]+ *\$' "\$log" | tail -1 | tr -dc 0-9)
+			[ -n "\$reset" ] && wait=\$((reset - \$(date +%s)))
+		fi
+		[ -n "\$wait" ] || wait=60
+		[ "\$wait" -ge 1 ] || wait=1
+		[ "\$wait" -le 600 ] || wait=600
+		echo "github_fetch: 429 for \$url, retrying in \${wait}s (retry \$((retry + 1))/10)" >&2
+		sleep "\$wait"
+	done
+}
 mkdir /opt/build_libs
 cd /opt/build_libs
 wget -4 --tries=3 --timeout=180 -O sdl.tar.gz https://github.com/libsdl-org/SDL/releases/download/release-${sdl2_version}/SDL2-${sdl2_version}.tar.gz
@@ -153,12 +184,12 @@ wget -4 --tries=3 --timeout=180 -O libgcrypt.tar.bz2 https://www.gnupg.org/ftp/g
 wget -4 --tries=3 --timeout=180 -O ffmpeg.tar.xz https://ffmpeg.org/releases/ffmpeg-${ffmpeg_version}.tar.xz
 echo "26f2bd7d20c6c616f31d7130c88d7250  ffmpeg.tar.xz" | md5sum -c - || exit 1
 sleep 5
-wget -4 --tries=3 --timeout=180 -O /usr/include/linux/ntsync.h https://raw.githubusercontent.com/zen-kernel/zen-kernel/refs/heads/6.15/main/include/uapi/linux/ntsync.h
+github_fetch https://raw.githubusercontent.com/zen-kernel/zen-kernel/refs/heads/6.15/main/include/uapi/linux/ntsync.h /usr/include/linux/ntsync.h
 sleep 5
-wget -4 --tries=3 --timeout=180 -O /usr/include/linux/userfaultfd.h https://raw.githubusercontent.com/zen-kernel/zen-kernel/refs/heads/6.15/main/include/uapi/linux/userfaultfd.h
+github_fetch https://raw.githubusercontent.com/zen-kernel/zen-kernel/refs/heads/6.15/main/include/uapi/linux/userfaultfd.h /usr/include/linux/userfaultfd.h
 wget -4 --tries=3 --timeout=180 -O wine.deb https://dl.winehq.org/wine-builds/ubuntu/dists/bionic/main/binary-amd64/wine-stable_4.0.3~bionic_amd64.deb
 git clone https://gitlab.freedesktop.org/gstreamer/gstreamer.git -b 1.22
-wget -4 --tries=3 --timeout=180 https://raw.githubusercontent.com/Kron4ek/Wine-Builds/refs/heads/master/mingw-w64-build
+github_fetch https://raw.githubusercontent.com/Kron4ek/Wine-Builds/refs/heads/master/mingw-w64-build mingw-w64-build
 tar xf sdl.tar.gz
 tar xf vulkan-loader.tar.gz
 tar xf vulkan-headers.tar.gz
