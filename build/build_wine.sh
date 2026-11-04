@@ -3,7 +3,7 @@
 ########################################################################
 ##
 ## A script for Wine compilation.
-## By default it uses two Ubuntu bootstraps (x32 and x64), which it enters
+## By default it uses a 64-bit Ubuntu bootstrap, which it enters
 ## with bubblewrap (root rights are not required).
 ##
 ## This script requires: git, wget, autoconf, xz, bubblewrap
@@ -94,9 +94,8 @@ export WINE_BUILD_OPTIONS="--without-oss --disable-winemenubuilder --disable-tes
 # This directory is removed and recreated on each script run.
 export BUILD_DIR="${HOME}"/build_wine
 
-# Change these paths to where your Ubuntu bootstraps reside
+# Change this path to where your Ubuntu bootstrap resides
 export BOOTSTRAP_X64=/opt/chroots/bionic64_chroot
-export BOOTSTRAP_X32=/opt/chroots/bionic32_chroot
 
 export scriptdir="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
 
@@ -145,17 +144,7 @@ if [ "$USE_CCACHE" = "true" ]; then
 fi
 
 build_with_bwrap () {
-	if [ "${1}" = "32" ]; then
-		BOOTSTRAP_PATH="${BOOTSTRAP_X32}"
-	else
-		BOOTSTRAP_PATH="${BOOTSTRAP_X64}"
-	fi
-
-	if [ "${1}" = "32" ] || [ "${1}" = "64" ]; then
-		shift
-	fi
-
-    bwrap --ro-bind "${BOOTSTRAP_PATH}" / --dev /dev --ro-bind /sys /sys \
+    bwrap --ro-bind "${BOOTSTRAP_X64}" / --dev /dev --ro-bind /sys /sys \
 		  --proc /proc --tmpfs /tmp --tmpfs /home --tmpfs /run --tmpfs /var \
 		  --tmpfs /mnt --tmpfs /media --bind "${BUILD_DIR}" "${BUILD_DIR}" \
 		  --bind-try "${XDG_CACHE_HOME}"/ccache "${XDG_CACHE_HOME}"/ccache \
@@ -339,14 +328,13 @@ if ! command -v bwrap 1>/dev/null; then
 	exit 1
 fi
 
-if [ ! -d "${BOOTSTRAP_X64}" ] || [ ! -d "${BOOTSTRAP_X32}" ]; then
+if [ ! -d "${BOOTSTRAP_X64}" ]; then
 	clear
 	echo "Bootstraps are required for compilation!"
 	exit 1
 fi
 
-BWRAP64="build_with_bwrap 64"
-BWRAP32="build_with_bwrap 32"
+BWRAP64="build_with_bwrap"
 
 export CROSSCC="${CROSSCC_X64}"
 export CROSSCXX="${CROSSCXX_X64}"
