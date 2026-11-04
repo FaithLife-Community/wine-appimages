@@ -1,7 +1,7 @@
 name: Bootstraps CI
 
-# Builds the Ubuntu bionic chroots (32- and 64-bit) that build.yml compiles Wine in,
-# and stores them as the "Bootstraps" workflow artifact. build.yml downloads the
+# Builds the 64-bit Ubuntu bionic chroot that build.yml compiles Wine in,
+# and stores it as the "Bootstraps" workflow artifact. build.yml downloads the
 # artifact from the most recent successful run of this workflow.
 #
 # Artifacts expire after 90 days, so this runs on the 1st of every month: there is

@@ -28,14 +28,9 @@ export CHROOT_MIRROR="https://ftp.uni-stuttgart.de/ubuntu/"
 # script, if you are going to use it
 export MAINDIR=/opt/chroots
 export CHROOT_X64="${MAINDIR}"/${CHROOT_DISTRO}64_chroot
-export CHROOT_X32="${MAINDIR}"/${CHROOT_DISTRO}32_chroot
 
 prepare_chroot () {
-	if [ "$1" = "32" ]; then
-		CHROOT_PATH="${CHROOT_X32}"
-	else
-		CHROOT_PATH="${CHROOT_X64}"
-	fi
+	CHROOT_PATH="${CHROOT_X64}"
 
 	echo "Unmount chroot directories. Just in case."
 	umount -Rl "${CHROOT_PATH}"
@@ -157,8 +152,7 @@ sleep 5
 wget -O /usr/include/linux/ntsync.h https://raw.githubusercontent.com/zen-kernel/zen-kernel/refs/heads/6.15/main/include/uapi/linux/ntsync.h
 sleep 5
 wget -O /usr/include/linux/userfaultfd.h https://raw.githubusercontent.com/zen-kernel/zen-kernel/refs/heads/6.15/main/include/uapi/linux/userfaultfd.h
-if [ -d /usr/lib/i386-linux-gnu ]; then wget -O wine.deb https://dl.winehq.org/wine-builds/ubuntu/dists/bionic/main/binary-i386/wine-stable_4.0.3~bionic_i386.deb; fi
-if [ -d /usr/lib/x86_64-linux-gnu ]; then wget -O wine.deb https://dl.winehq.org/wine-builds/ubuntu/dists/bionic/main/binary-amd64/wine-stable_4.0.3~bionic_amd64.deb; fi
+wget -O wine.deb https://dl.winehq.org/wine-builds/ubuntu/dists/bionic/main/binary-amd64/wine-stable_4.0.3~bionic_amd64.deb
 git clone https://gitlab.freedesktop.org/gstreamer/gstreamer.git -b 1.22
 wget https://raw.githubusercontent.com/Kron4ek/Wine-Builds/refs/heads/master/mingw-w64-build
 tar xf sdl.tar.gz
@@ -251,11 +245,10 @@ make -j$(nproc) install
 cd ../libgcrypt-${libgcrypt_version}
 ./configure
 make -j$(nproc) install
-# FFmpeg for winedmo (Wine's Media Foundation demuxer); 64-bit only, because the
-# WoW64 build has no 32-bit Unix side. Demuxing needs only libavformat, libavcodec
-# and libavutil, so encoders, muxers, filters, devices and network are left out.
-# LGPL (no --enable-gpl). build_wine.sh bundles these libraries next to winedmo.so.
-if [ -d /usr/lib/x86_64-linux-gnu ]; then
+# FFmpeg for winedmo (Wine's Media Foundation demuxer). Demuxing needs only
+# libavformat, libavcodec and libavutil, so encoders, muxers, filters, devices and
+# network are left out. LGPL (no --enable-gpl). build_wine.sh bundles these
+# libraries next to winedmo.so.
 cd ../ && rm -rf build && mkdir build && cd build
 ../ffmpeg-${ffmpeg_version}/configure --prefix=/usr/local --enable-shared --disable-static \
 	--disable-programs --disable-doc --disable-debug --disable-autodetect --enable-zlib \
@@ -263,26 +256,21 @@ cd ../ && rm -rf build && mkdir build && cd build
 	--disable-encoders --disable-muxers --disable-hwaccels --disable-indevs --disable-outdevs
 make -j$(nproc) install
 apt-get -y purge nasm
-fi
 cd /opt && rm -r /opt/build_libs
 EOF
 
 	chmod +x "${MAINDIR}"/prepare_chroot.sh
-	cp "${MAINDIR}"/prepare_chroot.sh "${CHROOT_X32}"/opt
 	mv "${MAINDIR}"/prepare_chroot.sh "${CHROOT_X64}"/opt
 }
 
 mkdir -p "${MAINDIR}"
 
 debootstrap --arch amd64 $CHROOT_DISTRO "${CHROOT_X64}" $CHROOT_MIRROR
-debootstrap --arch i386 $CHROOT_DISTRO "${CHROOT_X32}" $CHROOT_MIRROR
 
 create_build_scripts
-prepare_chroot 32
-prepare_chroot 64
+prepare_chroot
 
 rm "${CHROOT_X64}"/opt/prepare_chroot.sh
-rm "${CHROOT_X32}"/opt/prepare_chroot.sh
 
 clear
 echo "Done"
