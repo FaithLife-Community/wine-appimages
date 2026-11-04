@@ -67,7 +67,7 @@ create_build_scripts () {
 	sdl2_version="2.32.10"
 	vulkan_headers_version="1.4.352"
 	vulkan_loader_version="1.4.352"
-	spirv_headers_version="sdk-1.4.335.0"
+	spirv_headers_version="vulkan-sdk-1.4.335.0"
 	libpcap_version="1.10.6"
 	libxkbcommon_version="1.13.1"
 	python3_version="3.12.12"
@@ -105,8 +105,8 @@ apt-get update
 apt-get -y upgrade
 apt-get -y dist-upgrade
 apt-get -y install software-properties-common
-add-apt-repository -y ppa:ubuntu-toolchain-r/test
-add-apt-repository -y ppa:cybermax-dexter/mingw-w64-backport
+echo deb http://ppa.launchpad.net/ubuntu-toolchain-r/test/ubuntu ${CHROOT_DISTRO} main > /etc/apt/sources.list.d/ubuntu-toolchain-r-test.list
+echo deb http://ppa.launchpad.net/cybermax-dexter/mingw-w64-backport/ubuntu ${CHROOT_DISTRO} main > /etc/apt/sources.list.d/cybermax-dexter-mingw-w64-backport.list
 apt-get update
 apt-get -y build-dep wine-development libsdl2 libvulkan1 python3
 apt-get -y install ccache gcc-12 g++-12 gcc-15 g++-15 wget git gcc-mingw-w64 g++-mingw-w64 ninja-build
@@ -123,42 +123,42 @@ apt-get -y autoclean
 export PATH="/usr/local/bin:\${PATH}"
 mkdir /opt/build_libs
 cd /opt/build_libs
-wget -O sdl.tar.gz https://www.libsdl.org/release/SDL2-${sdl2_version}.tar.gz
+wget -4 --tries=3 --timeout=180 -O sdl.tar.gz https://github.com/libsdl-org/SDL/releases/download/release-${sdl2_version}/SDL2-${sdl2_version}.tar.gz
 sleep 5
-wget -O vulkan-loader.tar.gz https://github.com/KhronosGroup/Vulkan-Loader/archive/v${vulkan_loader_version}.tar.gz
+wget -4 --tries=3 --timeout=180 -O vulkan-loader.tar.gz https://github.com/KhronosGroup/Vulkan-Loader/archive/v${vulkan_loader_version}.tar.gz
 sleep 5
-wget -O vulkan-headers.tar.gz https://github.com/KhronosGroup/Vulkan-Headers/archive/v${vulkan_headers_version}.tar.gz
+wget -4 --tries=3 --timeout=180 -O vulkan-headers.tar.gz https://github.com/KhronosGroup/Vulkan-Headers/archive/v${vulkan_headers_version}.tar.gz
 sleep 5
-wget -O spirv-headers.tar.gz https://github.com/KhronosGroup/SPIRV-Headers/archive/${spirv_headers_version}.tar.gz
-wget -O libpcap.tar.gz https://www.tcpdump.org/release/libpcap-${libpcap_version}.tar.gz
+wget -4 --tries=3 --timeout=180 -O spirv-headers.tar.gz https://github.com/KhronosGroup/SPIRV-Headers/archive/${spirv_headers_version}.tar.gz
+wget -4 --tries=3 --timeout=180 -O libpcap.tar.gz https://www.tcpdump.org/release/libpcap-${libpcap_version}.tar.gz
 sleep 5
-wget -O libxkbcommon.tar.gz https://github.com/xkbcommon/libxkbcommon/archive/refs/tags/xkbcommon-${libxkbcommon_version}.tar.gz
-wget -O python3.tar.gz https://www.python.org/ftp/python/${python3_version}/Python-${python3_version}.tgz
+wget -4 --tries=3 --timeout=180 -O libxkbcommon.tar.gz https://github.com/xkbcommon/libxkbcommon/archive/refs/tags/xkbcommon-${libxkbcommon_version}.tar.gz
+wget -4 --tries=3 --timeout=180 -O python3.tar.gz https://www.python.org/ftp/python/${python3_version}/Python-${python3_version}.tgz
 sleep 5
-wget -O meson.tar.gz https://github.com/mesonbuild/meson/releases/download/${meson_version}/meson-${meson_version}.tar.gz
+wget -4 --tries=3 --timeout=180 -O meson.tar.gz https://github.com/mesonbuild/meson/releases/download/${meson_version}/meson-${meson_version}.tar.gz
 sleep 5
-wget -O cmake.tar.gz https://github.com/Kitware/CMake/releases/download/v${cmake_version}/cmake-${cmake_version}.tar.gz
+wget -4 --tries=3 --timeout=180 -O cmake.tar.gz https://github.com/Kitware/CMake/releases/download/v${cmake_version}/cmake-${cmake_version}.tar.gz
 sleep 5
-wget -O ccache.tar.gz https://github.com/ccache/ccache/releases/download/v${ccache_version}/ccache-${ccache_version}.tar.gz
-wget -O libglvnd.tar.gz https://gitlab.freedesktop.org/glvnd/libglvnd/-/archive/v${libglvnd_version}/libglvnd-v${libglvnd_version}.tar.gz
-wget -O bison.tar.xz https://ftp.gnu.org/gnu/bison/bison-${bison_version}.tar.xz
-wget -O wayland.tar.xz https://gitlab.freedesktop.org/wayland/wayland/-/releases/${wayland_version}/downloads/wayland-${wayland_version}.tar.xz
-wget -O wayland-protocols.tar.xz https://gitlab.freedesktop.org/wayland/wayland-protocols/-/releases/${wayland_protocols_version}/downloads/wayland-protocols-${wayland_protocols_version}.tar.xz
-wget -O gnutls.tar.xz https://www.gnupg.org/ftp/gcrypt/gnutls/v3.8/gnutls-${gnutls_version}.tar.xz
-wget -O nettle.tar.gz https://ftp.gnu.org/gnu/nettle/nettle-${nettle_version}.tar.gz
+wget -4 --tries=3 --timeout=180 -O ccache.tar.gz https://github.com/ccache/ccache/releases/download/v${ccache_version}/ccache-${ccache_version}.tar.gz
+wget -4 --tries=3 --timeout=180 -O libglvnd.tar.gz https://gitlab.freedesktop.org/glvnd/libglvnd/-/archive/v${libglvnd_version}/libglvnd-v${libglvnd_version}.tar.gz
+wget -4 --tries=3 --timeout=180 -O bison.tar.xz https://ftpmirror.gnu.org/gnu/bison/bison-${bison_version}.tar.xz
+wget -4 --tries=3 --timeout=180 -O wayland.tar.xz https://gitlab.freedesktop.org/wayland/wayland/-/releases/${wayland_version}/downloads/wayland-${wayland_version}.tar.xz
+wget -4 --tries=3 --timeout=180 -O wayland-protocols.tar.xz https://gitlab.freedesktop.org/wayland/wayland-protocols/-/releases/${wayland_protocols_version}/downloads/wayland-protocols-${wayland_protocols_version}.tar.xz
+wget -4 --tries=3 --timeout=180 -O gnutls.tar.xz https://www.gnupg.org/ftp/gcrypt/gnutls/v3.8/gnutls-${gnutls_version}.tar.xz
+wget -4 --tries=3 --timeout=180 -O nettle.tar.gz https://ftpmirror.gnu.org/gnu/nettle/nettle-${nettle_version}.tar.gz
 sleep 5
-wget -O p11-kit.tar.xz https://github.com/p11-glue/p11-kit/releases/download/${p11_kit_version}/p11-kit-${p11_kit_version}.tar.xz
-wget -O libgpg-error.tar.bz2 https://www.gnupg.org/ftp/gcrypt/libgpg-error/libgpg-error-${libgpg_error_version}.tar.bz2
-wget -O libgcrypt.tar.bz2 https://www.gnupg.org/ftp/gcrypt/libgcrypt/libgcrypt-${libgcrypt_version}.tar.bz2
-wget -O ffmpeg.tar.xz https://ffmpeg.org/releases/ffmpeg-${ffmpeg_version}.tar.xz
+wget -4 --tries=3 --timeout=180 -O p11-kit.tar.xz https://github.com/p11-glue/p11-kit/releases/download/${p11_kit_version}/p11-kit-${p11_kit_version}.tar.xz
+wget -4 --tries=3 --timeout=180 -O libgpg-error.tar.bz2 https://www.gnupg.org/ftp/gcrypt/libgpg-error/libgpg-error-${libgpg_error_version}.tar.bz2
+wget -4 --tries=3 --timeout=180 -O libgcrypt.tar.bz2 https://www.gnupg.org/ftp/gcrypt/libgcrypt/libgcrypt-${libgcrypt_version}.tar.bz2
+wget -4 --tries=3 --timeout=180 -O ffmpeg.tar.xz https://ffmpeg.org/releases/ffmpeg-${ffmpeg_version}.tar.xz
 echo "26f2bd7d20c6c616f31d7130c88d7250  ffmpeg.tar.xz" | md5sum -c - || exit 1
 sleep 5
-wget -O /usr/include/linux/ntsync.h https://raw.githubusercontent.com/zen-kernel/zen-kernel/refs/heads/6.15/main/include/uapi/linux/ntsync.h
+wget -4 --tries=3 --timeout=180 -O /usr/include/linux/ntsync.h https://raw.githubusercontent.com/zen-kernel/zen-kernel/refs/heads/6.15/main/include/uapi/linux/ntsync.h
 sleep 5
-wget -O /usr/include/linux/userfaultfd.h https://raw.githubusercontent.com/zen-kernel/zen-kernel/refs/heads/6.15/main/include/uapi/linux/userfaultfd.h
-wget -O wine.deb https://dl.winehq.org/wine-builds/ubuntu/dists/bionic/main/binary-amd64/wine-stable_4.0.3~bionic_amd64.deb
+wget -4 --tries=3 --timeout=180 -O /usr/include/linux/userfaultfd.h https://raw.githubusercontent.com/zen-kernel/zen-kernel/refs/heads/6.15/main/include/uapi/linux/userfaultfd.h
+wget -4 --tries=3 --timeout=180 -O wine.deb https://dl.winehq.org/wine-builds/ubuntu/dists/bionic/main/binary-amd64/wine-stable_4.0.3~bionic_amd64.deb
 git clone https://gitlab.freedesktop.org/gstreamer/gstreamer.git -b 1.22
-wget https://raw.githubusercontent.com/Kron4ek/Wine-Builds/refs/heads/master/mingw-w64-build
+wget -4 --tries=3 --timeout=180 https://raw.githubusercontent.com/Kron4ek/Wine-Builds/refs/heads/master/mingw-w64-build
 tar xf sdl.tar.gz
 tar xf vulkan-loader.tar.gz
 tar xf vulkan-headers.tar.gz
@@ -270,6 +270,9 @@ EOF
 mkdir -p "${MAINDIR}"
 
 debootstrap --arch amd64 $CHROOT_DISTRO "${CHROOT_X64}" $CHROOT_MIRROR || exit 1
+
+# PPA signing keys, committed so the build doesn't depend on Launchpad or a keyserver
+cp "$(dirname "$0")"/keys/*.asc "${CHROOT_X64}"/etc/apt/trusted.gpg.d/ || exit 1
 
 create_build_scripts
 prepare_chroot || exit 1
