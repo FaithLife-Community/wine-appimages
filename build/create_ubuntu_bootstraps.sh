@@ -67,7 +67,6 @@ prepare_chroot () {
 
 create_build_scripts () {
 	sdl2_version="2.32.10"
-	faudio_version="26.01"
 	vulkan_headers_version="1.4.352"
 	vulkan_loader_version="1.4.352"
 	spirv_headers_version="sdk-1.4.335.0"
@@ -126,7 +125,6 @@ export PATH="/usr/local/bin:\${PATH}"
 mkdir /opt/build_libs
 cd /opt/build_libs
 wget -O sdl.tar.gz https://www.libsdl.org/release/SDL2-${sdl2_version}.tar.gz
-wget -O faudio.tar.gz https://github.com/FNA-XNA/FAudio/archive/${faudio_version}.tar.gz
 sleep 5
 wget -O vulkan-loader.tar.gz https://github.com/KhronosGroup/Vulkan-Loader/archive/v${vulkan_loader_version}.tar.gz
 sleep 5
@@ -164,7 +162,6 @@ if [ -d /usr/lib/x86_64-linux-gnu ]; then wget -O wine.deb https://dl.winehq.org
 git clone https://gitlab.freedesktop.org/gstreamer/gstreamer.git -b 1.22
 wget https://raw.githubusercontent.com/Kron4ek/Wine-Builds/refs/heads/master/mingw-w64-build
 tar xf sdl.tar.gz
-tar xf faudio.tar.gz
 tar xf vulkan-loader.tar.gz
 tar xf vulkan-headers.tar.gz
 tar xf spirv-headers.tar.gz
@@ -198,8 +195,6 @@ cd ../ && mkdir build && cd build
 cmake ../ccache-${ccache_version} && make -j$(nproc) && make install
 cd ../ && rm -r build && mkdir build && cd build
 cmake ../SDL2-${sdl2_version} && make -j$(nproc) && make install
-cd ../ && rm -r build && mkdir build && cd build
-cmake ../FAudio-${faudio_version} && make -j$(nproc) && make install
 cd ../ && rm -r build && mkdir build && cd build
 cmake ../Vulkan-Headers-${vulkan_headers_version} && make -j$(nproc) && make install
 cd ../ && rm -r build && mkdir build && cd build
