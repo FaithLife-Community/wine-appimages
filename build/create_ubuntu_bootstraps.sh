@@ -50,6 +50,7 @@ prepare_chroot () {
 
 	echo "Chrooting into ${CHROOT_PATH}"
 	chroot "${CHROOT_PATH}" /usr/bin/env LANG=en_US.UTF-8 TERM=xterm PATH="/bin:/sbin:/usr/bin:/usr/sbin" /opt/prepare_chroot.sh
+	status=$?
 
 	echo "Unmount chroot directories"
 	umount -l "${CHROOT_PATH}"
@@ -58,6 +59,8 @@ prepare_chroot () {
 	umount "${CHROOT_PATH}"/dev/pts
 	umount "${CHROOT_PATH}"/dev/shm
 	umount "${CHROOT_PATH}"/dev
+
+	return $status
 }
 
 create_build_scripts () {
@@ -84,6 +87,7 @@ create_build_scripts () {
 
 	cat <<EOF > "${MAINDIR}"/prepare_chroot.sh
 #!/bin/bash
+set -e
 
 apt-get update
 apt-get -y install nano
@@ -185,23 +189,23 @@ export CXXFLAGS="-O2"
 cd cmake-${cmake_version}
 ./bootstrap --parallel=$(nproc)
 make -j$(nproc) install
-cd ../ && mkdir build && cd build
-cmake ../ccache-${ccache_version} && make -j$(nproc) && make install
-cd ../ && rm -r build && mkdir build && cd build
-cmake ../SDL2-${sdl2_version} && make -j$(nproc) && make install
-cd ../ && rm -r build && mkdir build && cd build
-cmake ../Vulkan-Headers-${vulkan_headers_version} && make -j$(nproc) && make install
-cd ../ && rm -r build && mkdir build && cd build
+cd ../; mkdir build; cd build
+cmake ../ccache-${ccache_version}; make -j$(nproc); make install
+cd ../; rm -r build; mkdir build; cd build
+cmake ../SDL2-${sdl2_version}; make -j$(nproc); make install
+cd ../; rm -r build; mkdir build; cd build
+cmake ../Vulkan-Headers-${vulkan_headers_version}; make -j$(nproc); make install
+cd ../; rm -r build; mkdir build; cd build
 cmake ../Vulkan-Loader-${vulkan_loader_version}
 make -j$(nproc)
 make install
-cd ../ && rm -r build && mkdir build && cd build
-cmake ../SPIRV-Headers-${spirv_headers_version} && make -j$(nproc) && make install
-cd ../ && dpkg -x wine.deb .
+cd ../; rm -r build; mkdir build; cd build
+cmake ../SPIRV-Headers-${spirv_headers_version}; make -j$(nproc); make install
+cd ../; dpkg -x wine.deb .
 cp opt/wine-stable/bin/widl /usr/bin
-rm -r build && mkdir build && cd build
-../libpcap-${libpcap_version}/configure && make -j$(nproc) install
-cd ../ && rm -r build && mkdir build && cd build
+rm -r build; mkdir build; cd build
+../libpcap-${libpcap_version}/configure; make -j$(nproc) install
+cd ../; rm -r build; mkdir build; cd build
 ../Python-${python3_version}/configure --enable-optimizations
 make -j$(nproc)
 make -j$(nproc) install
@@ -249,14 +253,14 @@ make -j$(nproc) install
 # libavformat, libavcodec and libavutil, so encoders, muxers, filters, devices and
 # network are left out. LGPL (no --enable-gpl). build_wine.sh bundles these
 # libraries next to winedmo.so.
-cd ../ && rm -rf build && mkdir build && cd build
+cd ../; rm -rf build; mkdir build; cd build
 ../ffmpeg-${ffmpeg_version}/configure --prefix=/usr/local --enable-shared --disable-static \
 	--disable-programs --disable-doc --disable-debug --disable-autodetect --enable-zlib \
 	--disable-avdevice --disable-avfilter --disable-swscale --disable-network \
 	--disable-encoders --disable-muxers --disable-hwaccels --disable-indevs --disable-outdevs
 make -j$(nproc) install
 apt-get -y purge nasm
-cd /opt && rm -r /opt/build_libs
+cd /opt; rm -r /opt/build_libs
 EOF
 
 	chmod +x "${MAINDIR}"/prepare_chroot.sh
@@ -265,10 +269,10 @@ EOF
 
 mkdir -p "${MAINDIR}"
 
-debootstrap --arch amd64 $CHROOT_DISTRO "${CHROOT_X64}" $CHROOT_MIRROR
+debootstrap --arch amd64 $CHROOT_DISTRO "${CHROOT_X64}" $CHROOT_MIRROR || exit 1
 
 create_build_scripts
-prepare_chroot
+prepare_chroot || exit 1
 
 rm "${CHROOT_X64}"/opt/prepare_chroot.sh
 
