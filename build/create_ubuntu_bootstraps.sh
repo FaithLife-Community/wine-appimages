@@ -105,8 +105,8 @@ apt-get update
 apt-get -y upgrade
 apt-get -y dist-upgrade
 apt-get -y install software-properties-common
-add-apt-repository -y ppa:ubuntu-toolchain-r/test
-add-apt-repository -y ppa:cybermax-dexter/mingw-w64-backport
+echo deb http://ppa.launchpad.net/ubuntu-toolchain-r/test/ubuntu ${CHROOT_DISTRO} main > /etc/apt/sources.list.d/ubuntu-toolchain-r-test.list
+echo deb http://ppa.launchpad.net/cybermax-dexter/mingw-w64-backport/ubuntu ${CHROOT_DISTRO} main > /etc/apt/sources.list.d/cybermax-dexter-mingw-w64-backport.list
 apt-get update
 apt-get -y build-dep wine-development libsdl2 libvulkan1 python3
 apt-get -y install ccache gcc-12 g++-12 gcc-15 g++-15 wget git gcc-mingw-w64 g++-mingw-w64 ninja-build
@@ -270,6 +270,9 @@ EOF
 mkdir -p "${MAINDIR}"
 
 debootstrap --arch amd64 $CHROOT_DISTRO "${CHROOT_X64}" $CHROOT_MIRROR || exit 1
+
+# PPA signing keys, committed so the build doesn't depend on Launchpad or a keyserver
+cp "$(dirname "$0")"/keys/*.asc "${CHROOT_X64}"/etc/apt/trusted.gpg.d/ || exit 1
 
 create_build_scripts
 prepare_chroot || exit 1
