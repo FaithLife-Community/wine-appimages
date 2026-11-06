@@ -22,7 +22,7 @@ Actions → **Build Wine AppImage** → *Run workflow*:
 | Input | Value | Example |
 |---|---|---|
 | `wine_repo` | Git URL of the Wine source | `https://github.com/FaithLife-Community/wine.git` (default) |
-| `wine_branch` | the patch branch | `logos-11.21` |
+| `wine_branch` | the patch branch (see [patches.md](patches.md#branches)) | `oinos-prerelease` |
 | `label` | short name for this build, **no hyphens** | `logosc37cb58` |
 | `wine_version` | leave empty to use the branch's `VERSION` | |
 
@@ -30,7 +30,7 @@ Or from the command line, with the GitHub CLI logged in as a maintainer:
 
 ```bash
 gh workflow run build.yml -R FaithLife-Community/wine-appimages \
-  -f wine_branch=logos-master -f label=logosc37cb58
+  -f wine_branch=oinos-prerelease -f label=oinosprerelease
 ```
 
 ### Choosing a label

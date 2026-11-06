@@ -7,23 +7,34 @@ dropped from here.
 
 ## Branches
 
-| Branch | Base | Contents | Status |
-|---|---|---|---|
-| `master` | upstream | Mirror of upstream Wine. Never commit here. | |
-| **`logos-11.21`** | `wine-11.21` | Patches 1–13 | **Current.** Printing (4–8) and media playback (9–13). |
-| `logos-master` | upstream `c37cb58e` (29 Oct 2026, after 11.20) | Patches 1–3 | Superseded by `logos-11.21`. Included the upstream fix for the 11.20 startup crash ([bug 60528](https://bugs.winehq.org/show_bug.cgi?id=60528)). |
-| `logos-11.21-media` | `wine-11.21` | Patches 1–3, 9–13 | Media development branch; folded into `logos-11.21`. |
-| `wineps-glyph-names` | `logos-master` | Patches 1–8 | Printing development branch; folded into `logos-11.21`. |
-| `prntvpt-devmode` | `logos-master` | Patches 1–4 | Patch 4 alone, for the upstream merge request. |
-| `d3d9-getrendertargetdata` | `logos-master` | Patches 1–3, 9 | Media development branch. |
-| `wineps-gsub-debug` | `wineps-glyph-names` | A debug trace | Throwaway: dumps fonts' GSUB and cmap tables. Never build releases from it. |
-| `logos-11.20` | `wine-11.20` | All patches below | Superseded: 11.20 itself crashes at startup on some systems. |
-| `cef-share` | `wine-10.13` | The two CEF memory patches | Original development branch. |
-| `cef-vprot` | `wine-10.13` | The first CEF memory patch only | Original development branch. |
+| Branch | Purpose |
+|---|---|
+| `master` | Mirror of upstream Wine. Never commit here; only fast-forward it to upstream. |
+| **`oinos-master`** | **Stable.** Releases for OuDedetai users are built from here. Patches arrive only from `oinos-prerelease`, once they have been tested there. |
+| **`oinos-prerelease`** | Tested patches waiting for the next stable release. Beta builds come from here. |
+| `oinos-testing/<topic>` | Work in progress, one branch per topic, e.g. `oinos-testing/media` or `oinos-testing/printing`. Merge into `oinos-prerelease` with a pull request once tested. |
 
-Name new combined branches `logos-<base>`: `logos-11.21` for a release, or
-`logos-master` (force-pushed) for a commit between releases. Write the upstream
-commit in the build label (see the [README](../README.md#naming)).
+A patch moves `oinos-testing/<topic>` → `oinos-prerelease` → `oinos-master`. Branch new
+work from `oinos-prerelease`.
+
+Older branches kept for reference (all their patches are already in `oinos-prerelease`
+unless noted):
+
+| Branch | Was |
+|---|---|
+| `oinos-testing/logos-master` | Patches 1–3 on upstream `c37cb58e` (after 11.20, with the fix for the 11.20 startup crash, [bug 60528](https://bugs.winehq.org/show_bug.cgi?id=60528)). |
+| `oinos-testing/logos-11.20` | Patches 1–3 on `wine-11.20`, which crashes at startup on some systems. |
+| `oinos-testing/logos-11.21-media`, `oinos-testing/logos-11.21-revertdc` | Media development on `wine-11.21`. |
+| `oinos-testing/media` | Patches 14–15 (focus fixes), merged in PR #13. |
+| `oinos-testing/overlay-only` | Patch 15 alone, to show patch 14 is also needed. |
+| `oinos-testing/wineps-glyph-names` | Printing development (patches 1–8). |
+| `oinos-testing/prntvpt-devmode` | Patch 4 alone, for the upstream merge request. |
+| `oinos-testing/xpsprint-stubs` | Patch 6 alone, for upstream. |
+| `oinos-testing/printing` | **Not in prerelease:** a throwaway debug trace dumping fonts' GSUB and cmap tables. Never build releases from it. |
+| `oinos-testing/dcfix` | **Not in prerelease:** "wined3d: Stop using a swapchain DC once it no longer belongs to the window", an alternative to the wined3d reverts. |
+| `oinos-testing/cef-share`, `oinos-testing/cef-vprot` | The original CEF memory patches (1–2) on `wine-10.13`. |
+
+Put the upstream commit in the build label (see [building.md](building.md#choosing-a-label)).
 
 ## The patches
 
@@ -126,6 +137,21 @@ commit in the build label (see the [README](../README.md#naming)).
   Fixes a deadlock with Logos's presenter thread on seek.
 - **Upstream:** not yet submitted; tests still to write.
 
+### 14–15. winex11: stop Logos popups and the read-aloud overlay taking focus
+
+- **Problem:** on KDE Plasma (X11), typing during read-aloud went to the Plasma panel,
+  which popped up whenever the orange read-aloud circles flashed. This started with the
+  Wine 10.5 menu fixes ([bug 52380](https://bugs.winehq.org/show_bug.cgi?id=52380)).
+- **14. winex11: Don't let no-activate popups steal X focus or become WM-activated.**
+  Logos calls `SetActiveWindow` on its WPF popups (WS_EX_NOACTIVATE). Wine moved X focus
+  into them directly, so it fell to the root window when they closed, and handed them to
+  the window manager. Without it, typing pauses briefly and the screen flickers black.
+- **15. winex11: Don't let click-through layered overlay windows be managed.** The circles
+  are a caption-less WS_EX_LAYERED | WS_EX_TRANSPARENT window that Wine had handed to the
+  window manager at creation, so KWin saw a new window appear on every flash. This one
+  stops the panel.
+- **Upstream:** not yet submitted; planned as a two-patch series, 15 first.
+
 Media playback also needs Wine built with FFmpeg: winedmo, Wine's FFmpeg-based media
 source, is what OuDedetai's `DisableGstByteStreamHandler=1` switches Logos to. The build
 bundles FFmpeg (see [building.md](building.md)); decoding still uses the host's
@@ -144,9 +170,9 @@ With a local clone of the fork, and upstream added as a remote:
 git remote add upstream https://gitlab.winehq.org/wine/wine.git   # once
 git fetch upstream --tags
 
-# e.g. moving from logos-master to wine-11.21
-git checkout -b logos-11.21 logos-master
-git rebase --onto wine-11.21 <old base commit or tag>
+# e.g. moving oinos-prerelease from wine-11.21 to wine-11.22
+git checkout -b oinos-testing/rebase-11.22 oinos-prerelease
+git rebase --onto wine-11.22 <old base commit or tag>
 ```
 
 The `ntdll/unix/virtual.c` patches conflict most often, because upstream reworks that
@@ -159,7 +185,9 @@ Build it once locally before pushing. Then push the branch and build it as in
 
 ## Adding a new patch
 
-1. Branch from the current combined branch, commit the patch with a clear Wine-style
+1. Branch `oinos-testing/<topic>` from `oinos-prerelease`, commit the patch with a clear Wine-style
    message (`component: Do something.`), and say in the message what problem it fixes.
 2. Add an entry to the list above: problem, fix, effect, upstream status.
-3. Build and test it (see [testing.md](testing.md)) before it goes into a release.
+3. Build and test it (see [testing.md](testing.md)), then merge it into
+   `oinos-prerelease` with a pull request. It reaches `oinos-master` with the next
+   stable release.
