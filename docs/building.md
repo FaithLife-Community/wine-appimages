@@ -17,38 +17,53 @@ You need write access to this repository to start it.
 
 ## Running a build
 
-Actions → **Build Wine AppImage** → *Run workflow*:
+Actions → **Build Wine AppImage** → *Run workflow*. Choose the **release type** first;
+it decides which branch may be built and how the build is named:
 
-| Input | Value | Example |
-|---|---|---|
-| `wine_repo` | Git URL of the Wine source | `https://github.com/FaithLife-Community/wine.git` (default) |
-| `wine_branch` | the patch branch | `logos-11.21` |
-| `label` | short name for this build, **no hyphens** | `logosc37cb58` |
-| `wine_version` | leave empty to use the branch's `VERSION` | |
+| `release_type` | Branch | Release tag | AppImage |
+|---|---|---|---|
+| `release` | `oinos-master` only | `11.21-oinos` (then `11.21-oinos-2`, …) | `wine-custom_11.21_oinos-x86_64.AppImage` |
+| `prerelease` | `oinos-prerelease` only | `11.21-oinos-pre-a5d413a` | `wine-custom_11.21_oinos-pre-a5d413a-x86_64.AppImage` |
+| `draft` (default) | any branch or tag | `11.21-media-9ce4a22` | `wine-custom_11.21_media-9ce4a22-x86_64.AppImage` |
+
+`11.21` is the Wine version of the branch (its `VERSION` file) and the hash is the
+branch's commit. A draft is named after the last part of its branch:
+`oinos-testing/media` gives `media`. `release` and `prerelease` builds must come from
+FaithLife-Community/wine. The run stops before compiling if the branch doesn't fit the
+type.
+
+The other inputs are optional:
+
+| Input | Value |
+|---|---|
+| `wine_branch` | the branch to build (see [patches.md](patches.md#branches)); empty = `oinos-master` or `oinos-prerelease` for those types. Drafts must name one. |
+| `wine_repo` | Git URL of the Wine source (default `https://github.com/FaithLife-Community/wine.git`) |
+| `label` | replaces `oinos` or the topic name in the tag and file name, **no hyphens** |
+| `wine_version` | leave empty to use the branch's `VERSION` |
 
 Or from the command line, with the GitHub CLI logged in as a maintainer:
 
 ```bash
+gh workflow run build.yml -R FaithLife-Community/wine-appimages -f release_type=prerelease
 gh workflow run build.yml -R FaithLife-Community/wine-appimages \
-  -f wine_branch=logos-master -f label=logosc37cb58
+  -f release_type=draft -f wine_branch=oinos-testing/media
 ```
 
-### Choosing a label
+### Naming rules
 
-The label appears in the file name and the release tag. OuDedetai splits AppImage file
-names on hyphens to read the version, so the workflow refuses labels containing
-hyphens. Between Wine releases, the source still reports the previous version number,
-so include the upstream commit: `logosc37cb58` means the Logos patches on upstream
-commit `c37cb58e`. For a build on a release tag, `logos` alone is fine
-(`wine-custom_11.21_logos-x86_64.AppImage`).
+OuDedetai reads the Wine version from the AppImage's file name, from between the first
+two hyphens (`custom_11.21_oinos`), and compares it with the installed Wine. So the file
+name must start `wine-custom_<version>_<label>`, and the label itself can't contain
+hyphens; the workflow refuses such labels. Everything after the label (`-pre-…`, the
+commit, `-2`) may use hyphens. OuDedetai only displays the release tag; it picks the
+newest release by publication date.
 
 ## What you get
 
-A **draft** release tagged `<version>-<label>` (for example `11.20-logosc37cb58`),
-containing, in this order:
+A **draft** release with the tag from the table above, containing, in this order:
 
-- `wine-custom_<version>_<label>-x86_64.AppImage`
-- `wine-custom_<version>_<label>-x86_64.bundle.tar.xz`: the same folder as a plain
+- `wine-custom_<version>_<name>-x86_64.AppImage`
+- `wine-custom_<version>_<name>-x86_64.bundle.tar.xz`: the same folder as a plain
   tarball, for systems without FUSE or that dislike AppImages. Unpack anywhere and run
   `./<folder>/AppRun`.
 
@@ -57,10 +72,13 @@ is useful for local testing. Both jobs' summary pages show the source commit, th
 and the newest glibc the build needs. Wine is compiled on Ubuntu bionic so that it runs
 on old distros.
 
-Running the workflow again with the same label **replaces** that release while it is
-still a draft. Once it has been published (as a prerelease or full release) the run
-fails at the release step instead, so a live build can't be swapped out by accident;
-pick a new label.
+Every build starts as a draft, whatever its type. A `release` draft publishes as a full
+release; the others publish as prereleases.
+
+Running the workflow again for the same tag **replaces** that release while it is
+still a draft. Once it has been published, a `prerelease` or `draft` run for the same
+commit fails at the release step instead, so a live build can't be swapped out by
+accident. A `release` run picks the next free tag (`-2`, `-3`, …) instead.
 
 Drafts are visible only to maintainers, on the repository's Releases page.
 
@@ -97,21 +115,26 @@ AppImage's, and check the release's file list afterwards.
 
 The steps:
 
-1. Download the AppImage from the draft and test it with Logos (see [testing.md](testing.md)).
-2. If it works, edit the draft, tick *Set as a pre-release*, add what you tested to the
-   notes, and click *Publish release*. It becomes OuDedetai's beta, replacing any
-   earlier beta, so let the other maintainers know.
-3. Once beta users have confirmed it, edit it again and untick *Set as a pre-release*.
-   That makes it Recommended for everyone.
+1. Test patches with `draft` builds of their `oinos-testing/<topic>` branch, then merge
+   them into `oinos-prerelease`.
+2. Build a `prerelease`, download its AppImage from the draft and test it with Logos (see
+   [testing.md](testing.md)). If it works, add what you tested to the notes and click
+   *Publish release*. It becomes OuDedetai's beta, replacing any earlier beta, so let
+   the other maintainers know.
+3. Once beta users have confirmed it, merge `oinos-prerelease` into `oinos-master`,
+   build a `release`, check it the same way and publish it. That makes it Recommended
+   for everyone.
 
 ## When a build fails
 
 - **"Download bootstraps artifact" fails**: the artifact expired, or Bootstraps CI has
   never succeeded. Run *Bootstraps CI* by hand.
-- **"Release" fails with "already published"**: a published release already has
-  this tag. Run again with a new label.
-- **"Check the label" fails**: the label contains a hyphen or other character that isn't
-  allowed.
+- **"Release" fails with "already published"**: a published prerelease or draft-type
+  build already has this tag, i.e. this commit was published before. Push a new commit,
+  or run again with a different `label`.
+- **"Check the branch and work out the name" fails**: the branch doesn't fit the release
+  type, doesn't exist, or the label contains a hyphen or another character that isn't
+  allowed. The error message says which.
 - **Compile error in "Build Wine"**: usually a patch that no longer fits the newer Wine.
   Fix it on its branch (see [patches.md](patches.md)), ideally after a local build.
 - **"Build AppImage" fails while downloading packages**: the recipe pulls Ubuntu focal

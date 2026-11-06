@@ -6,8 +6,8 @@ Download the `.AppImage` from the release, make it executable, and point OuDedet
 at it:
 
 ```bash
-chmod +x wine-custom_11.20_logosc37cb58-x86_64.AppImage
-oudedetai --set-appimage ~/Downloads/wine-custom_11.20_logosc37cb58-x86_64.AppImage
+chmod +x wine-custom_11.21_oinos-pre-a5d413a-x86_64.AppImage
+oudedetai --set-appimage ~/Downloads/wine-custom_11.21_oinos-pre-a5d413a-x86_64.AppImage
 ```
 
 This works when OuDedetai's Wine choice is an AppImage (including the Recommended

@@ -2,9 +2,13 @@ name: Build Wine AppImage
 
 # Builds Wine from a branch of a Wine git repository (by default a patch branch of
 # FaithLife-Community/wine), wraps it into an AppImage plus a plain "bundled" tarball,
-# and uploads both to a DRAFT release tagged <version>-<label>. A maintainer publishes
-# it after testing: first as a prerelease (OuDedetai's beta), later as a full release
-# (OuDedetai's Recommended for everyone). See docs/building.md.
+# and uploads both to a DRAFT release. A maintainer publishes it after testing.
+#
+# release_type decides which branch may be built and how the build is named
+# (see docs/building.md):
+#   release     oinos-master only      11.21-oinos, 11.21-oinos-2, ...  (OuDedetai's Recommended)
+#   prerelease  oinos-prerelease only  11.21-oinos-pre-<commit>         (OuDedetai's beta)
+#   draft       any branch             11.21-<topic>-<commit>           (for testing)
 #
 # Prerequisite: a successful "Bootstraps CI" run in this repository within the last
 # 90 days (its artifact holds the Ubuntu chroots Wine is compiled in).
@@ -12,17 +16,24 @@ name: Build Wine AppImage
 on:
   workflow_dispatch:
     inputs:
+      release_type:
+        description: "release (from oinos-master), prerelease (from oinos-prerelease) or draft (any branch)"
+        type: choice
+        options: [draft, prerelease, release]
+        default: draft
+        required: true
       wine_repo:
         description: "Git URL of the Wine source"
         default: "https://github.com/FaithLife-Community/wine.git"
         required: true
       wine_branch:
-        description: "Branch or tag to build (see docs/patches.md)"
-        default: "logos-master"
-        required: true
+        description: "Branch or tag to build; empty = the branch for the release type (drafts must name one)"
+        default: ""
+        required: false
       label:
-        description: "Short label for file names and the release tag, no hyphens (e.g. logosc37cb58)"
-        required: true
+        description: "Optional name override, no hyphens; empty = oinos, or the topic for drafts (oinos-testing/media gives media)"
+        default: ""
+        required: false
       wine_version:
         description: "Version for the file names; empty = the VERSION of the branch"
         default: ""
@@ -37,7 +48,7 @@ permissions:
   actions: read     # download the Bootstraps artifact from another workflow run
 
 concurrency:
-  group: build-${{ inputs.label }}
+  group: build-${{ inputs.release_type }}-${{ inputs.wine_branch }}-${{ inputs.label }}
   cancel-in-progress: false
 
 jobs:
@@ -48,17 +59,66 @@ jobs:
     outputs:
       tarball: ${{ steps.build.outputs.tarball }}
       version: ${{ steps.build.outputs.version }}
+      branch: ${{ steps.plan.outputs.branch }}
+      commit: ${{ steps.plan.outputs.commit }}
+      label: ${{ steps.plan.outputs.label }}
+      suffix: ${{ steps.plan.outputs.suffix }}
 
     steps:
-      - name: Check the label
+      - name: Check the branch and work out the name
+        id: plan
         env:
+          IN_TYPE: ${{ inputs.release_type }}
+          IN_WINE_REPO: ${{ inputs.wine_repo }}
+          IN_WINE_BRANCH: ${{ inputs.wine_branch }}
           IN_LABEL: ${{ inputs.label }}
         run: |
-          # OuDedetai splits AppImage file names on hyphens to read the version
-          if ! printf '%s' "$IN_LABEL" | grep -Eq '^[A-Za-z0-9._]+$'; then
-            echo "::error::label must contain only letters, digits, dots and underscores (no hyphens)"
-            exit 1
+          fail() { echo "::error::$*"; exit 1; }
+          case "$IN_TYPE" in
+            release)    want=oinos-master ;;
+            prerelease) want=oinos-prerelease ;;
+            draft)      want= ;;
+            *)          fail "unknown release_type '$IN_TYPE'" ;;
+          esac
+          branch="${IN_WINE_BRANCH:-$want}"
+          [ -n "$branch" ] || fail "a draft needs wine_branch"
+          if [ -n "$want" ]; then
+            [ "$branch" = "$want" ] || fail "a $IN_TYPE is built only from $want, not $branch"
+            case "${IN_WINE_REPO%.git}" in
+              https://github.com/FaithLife-Community/wine) ;;
+              *) fail "a $IN_TYPE is built only from https://github.com/FaithLife-Community/wine.git" ;;
+            esac
           fi
+          commit=$(git ls-remote "$IN_WINE_REPO" "refs/heads/$branch" "refs/tags/$branch" | head -n1 | cut -f1)
+          [ -n "$commit" ] || fail "no branch or tag '$branch' in $IN_WINE_REPO"
+          short=$(printf '%s' "$commit" | cut -c1-7)
+
+          # The AppImage is named wine-custom_<version>_<label><suffix>-<arch>.AppImage.
+          # OuDedetai reads the Wine version from between the first two hyphens
+          # (custom_11.21_<label>), so the label itself must not contain hyphens;
+          # the suffix may.
+          if [ -n "$IN_LABEL" ]; then
+            label="$IN_LABEL"
+          elif [ "$IN_TYPE" = draft ]; then
+            label=$(printf '%s' "${branch##*/}" | tr -cd 'A-Za-z0-9.')
+            [ -n "$label" ] || label=build
+          else
+            label=oinos
+          fi
+          printf '%s' "$label" | grep -Eq '^[A-Za-z0-9._]+$' \
+            || fail "label must contain only letters, digits, dots and underscores (no hyphens)"
+          case "$IN_TYPE" in
+            release)    suffix= ;;   # a free -2, -3, ... is added when releasing, if needed
+            prerelease) suffix="-pre-$short" ;;
+            draft)      suffix="-$short" ;;
+          esac
+          {
+            echo "branch=$branch"
+            echo "commit=$commit"
+            echo "label=$label"
+            echo "suffix=$suffix"
+          } >> "$GITHUB_OUTPUT"
+          echo "Building a $IN_TYPE from $branch ($short), named $label$suffix"
 
       - uses: actions/checkout@v4
 
@@ -78,9 +138,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/ccache
-          key: ccache-${{ inputs.wine_branch }}-${{ github.run_id }}
+          key: ccache-${{ steps.plan.outputs.branch }}-${{ github.run_id }}
           restore-keys: |
-            ccache-${{ inputs.wine_branch }}-
+            ccache-${{ steps.plan.outputs.branch }}-
             ccache-
 
       - name: Build Wine
@@ -88,8 +148,8 @@ jobs:
         env:
           # Inputs are passed through the environment, never interpolated into the script.
           IN_WINE_REPO: ${{ inputs.wine_repo }}
-          IN_WINE_BRANCH: ${{ inputs.wine_branch }}
-          IN_LABEL: ${{ inputs.label }}
+          IN_WINE_BRANCH: ${{ steps.plan.outputs.branch }}
+          IN_LABEL: ${{ steps.plan.outputs.label }}
           IN_WINE_VERSION: ${{ inputs.wine_version }}
         run: |
           sudo apt update
@@ -108,7 +168,6 @@ jobs:
           [ -n "$IN_WINE_VERSION" ] && version="$IN_WINE_VERSION"
           echo "tarball=$(basename "$f")" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "commit=$(git ls-remote "$IN_WINE_REPO" "$IN_WINE_BRANCH" | head -n1 | cut -c1-12)" >> "$GITHUB_OUTPUT"
           ls -l "$f"; sha256sum "$f"
           /opt/chroots/bionic64_chroot/usr/local/bin/ccache -s 2>/dev/null || true
 
@@ -116,8 +175,8 @@ jobs:
         env:
           TARBALL: build/${{ steps.build.outputs.tarball }}
           IN_WINE_REPO: ${{ inputs.wine_repo }}
-          IN_WINE_BRANCH: ${{ inputs.wine_branch }}
-          COMMIT: ${{ steps.build.outputs.commit }}
+          IN_WINE_BRANCH: ${{ steps.plan.outputs.branch }}
+          COMMIT: ${{ steps.plan.outputs.commit }}
         run: |
           d=$(mktemp -d)
           tar -C "$d" -xf "$TARBALL"
@@ -126,7 +185,7 @@ jobs:
                    | grep -o 'GLIBC_[0-9.]*' | sort -Vu | tail -1)
           {
             echo "### $(basename "$TARBALL")"
-            echo "- source: \`$IN_WINE_REPO\` branch \`$IN_WINE_BRANCH\` (\`$COMMIT\`)"
+            echo "- source: \`$IN_WINE_REPO\` branch \`$IN_WINE_BRANCH\` (\`$(printf '%s' "$COMMIT" | cut -c1-12)\`)"
             echo "- tarball: $(du -h "$TARBALL" | cut -f1), unpacked: $(du -sh "$w" | cut -f1)"
             echo "- newest glibc symbol needed by wineserver/ntdll.so: ${need:-unknown}"
           } | tee -a "$GITHUB_STEP_SUMMARY"
@@ -164,15 +223,42 @@ jobs:
           sudo mkdir -p /usr/share/icons/hicolor/scalable/
           sudo cp appimage/wine.svg /usr/share/icons/hicolor/scalable/
 
+      - name: Choose the release tag
+        id: name
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IN_TYPE: ${{ inputs.release_type }}
+          VERSION: ${{ needs.wine.outputs.version }}
+          LABEL: ${{ needs.wine.outputs.label }}
+          SUFFIX: ${{ needs.wine.outputs.suffix }}
+        run: |
+          published=$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases" \
+                        --jq '.[] | select(.draft | not) | .tag_name')
+          tag="${VERSION}-${LABEL}${SUFFIX}"
+          if [ "$IN_TYPE" = release ]; then
+            # Published releases are never replaced: the next stable release on the
+            # same Wine version becomes <version>-oinos-2, then -3, ...
+            n=1
+            while printf '%s\n' "$published" | grep -qxF "$tag"; do
+              n=$((n + 1))
+              tag="${VERSION}-${LABEL}-$n"
+            done
+          fi
+          rest="${tag#"${VERSION}-${LABEL}"}"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "name=wine-custom_${VERSION}_${LABEL}${rest}-$(uname -m)" >> "$GITHUB_OUTPUT"
+          echo "wine_ver=custom_${VERSION}_${LABEL}${rest}" >> "$GITHUB_OUTPUT"
+          echo "Release tag: $tag"
+
       - name: Build AppImage
         env:
-          VERSION: ${{ needs.wine.outputs.version }}
-          IN_LABEL: ${{ inputs.label }}
           TARBALL_NAME: ${{ needs.wine.outputs.tarball }}
+          NAME: ${{ steps.name.outputs.name }}
+          WINE_VER: ${{ steps.name.outputs.wine_ver }}
         run: |
           export WINE_TARBALL="$PWD/wine-tarball/$TARBALL_NAME"
-          export WINE_VER="custom_${VERSION}_${IN_LABEL}"
-          name="wine-custom_${VERSION}_${IN_LABEL}-$(uname -m)"
+          export WINE_VER
+          name="$NAME"
           mkdir -p out
           (cd appimage && ../squashfs-root/AppRun --skip-appimage --recipe recipe.yml)
 
@@ -207,14 +293,30 @@ jobs:
       - name: Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          IN_LABEL: ${{ inputs.label }}
+          IN_TYPE: ${{ inputs.release_type }}
           IN_WINE_REPO: ${{ inputs.wine_repo }}
-          IN_WINE_BRANCH: ${{ inputs.wine_branch }}
+          BRANCH: ${{ needs.wine.outputs.branch }}
+          COMMIT: ${{ needs.wine.outputs.commit }}
           VERSION: ${{ needs.wine.outputs.version }}
+          TAG: ${{ steps.name.outputs.tag }}
         run: |
-          # Same <version>-<branch> style as the older releases; OuDedetai reads the tag as the version.
-          tag="${VERSION}-${IN_LABEL}"
-          notes="Untested build of Wine ${VERSION} from ${IN_WINE_REPO} branch ${IN_WINE_BRANCH}.
+          tag="$TAG"
+          short=$(printf '%s' "$COMMIT" | cut -c1-12)
+          case "$IN_TYPE" in
+            release)
+              title="Wine ${VERSION} AppImage (${tag#"${VERSION}-"})"
+              prerelease=
+              what="Stable build" ;;
+            prerelease)
+              title="Wine ${VERSION} AppImage prerelease (${tag#"${VERSION}-"})"
+              prerelease=--prerelease
+              what="Prerelease (beta) build" ;;
+            *)
+              title="Wine ${VERSION} AppImage test build (${tag#"${VERSION}-"})"
+              prerelease=--prerelease
+              what="Untested build" ;;
+          esac
+          notes="${what} of Wine ${VERSION} from ${IN_WINE_REPO} branch ${BRANCH} (commit ${short}).
           The AppImage, plus a tarball of the same bundled folder for systems without FUSE.
           See docs/building.md for testing and publishing."
           # Only replace an earlier build with this tag while it is still a draft. A published
@@ -235,10 +337,12 @@ jobs:
           done <<< "$existing"
           # A draft: OuDedetai offers the newest prerelease as its beta and the newest full
           # release to everyone, so nothing becomes visible until a maintainer publishes it.
+          # A release-type build is created without the prerelease flag, so publishing the
+          # draft makes it a full release; drafts of other types publish as prereleases.
           # OuDedetai downloads the FIRST asset. GitHub orders assets by name, not upload
           # order, which the file names above take care of; the check below confirms it.
-          gh release create "$tag" --draft --prerelease --target "$GITHUB_SHA" \
-            --title "Wine ${VERSION} AppImage (${IN_LABEL})" --notes "$notes" \
+          gh release create "$tag" --draft $prerelease --target "$GITHUB_SHA" \
+            --title "$title" --notes "$notes" \
             --repo "$GITHUB_REPOSITORY" out/*.AppImage
           gh release upload "$tag" out/*.bundle.tar.xz --repo "$GITHUB_REPOSITORY"
           first=$(gh api "repos/$GITHUB_REPOSITORY/releases" --jq ".[] | select(.tag_name == \"$tag\") | .assets[0].name")
