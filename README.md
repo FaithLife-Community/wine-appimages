@@ -41,13 +41,18 @@ longer needed for builds).
 
 ## Naming
 
-AppImages are named `wine-custom_<wine version>_<label>-x86_64.AppImage`, for
-example `wine-custom_11.20_logosc37cb58-x86_64.AppImage`. OuDedetai splits the
-file name on hyphens to read the version, so **labels must not contain hyphens**.
+The workflow names builds by release type (see
+[docs/building.md](docs/building.md#running-a-build)):
 
-When a build is from a Wine commit between releases, Wine still reports the
-previous release number, so put the commit in the label (`logosc37cb58` = based
-on upstream commit `c37cb58e`).
+| Type | Built from | AppImage |
+|---|---|---|
+| release | `oinos-master` | `wine-custom_11.21_oinos-x86_64.AppImage` |
+| prerelease | `oinos-prerelease` | `wine-custom_11.21_oinos-pre-a5d413a-x86_64.AppImage` |
+| draft | any branch | `wine-custom_11.21_media-9ce4a22-x86_64.AppImage` |
+
+`11.21` is the Wine version the branch is based on, and the hash is its commit. OuDedetai
+reads the version from between the first two hyphens of the file name, so keep the
+`wine-custom_<version>_<label>` start and **don't put hyphens in labels**.
 
 ## Licences
 

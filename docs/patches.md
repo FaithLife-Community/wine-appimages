@@ -34,7 +34,9 @@ unless noted):
 | `oinos-testing/dcfix` | **Not in prerelease:** "wined3d: Stop using a swapchain DC once it no longer belongs to the window", an alternative to the wined3d reverts. |
 | `oinos-testing/cef-share`, `oinos-testing/cef-vprot` | The original CEF memory patches (1–2) on `wine-10.13`. |
 
-Put the upstream commit in the build label (see [building.md](building.md#choosing-a-label)).
+Build releases from `oinos-master`, prereleases from `oinos-prerelease` and test drafts from
+any branch; the build workflow enforces this and names the builds (see
+[building.md](building.md#running-a-build)).
 
 ## The patches
 
