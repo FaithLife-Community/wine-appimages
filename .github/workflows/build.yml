@@ -42,6 +42,10 @@ on:
         description: "Bootstraps CI run id to take the chroots from; empty = the latest successful run"
         default: ""
         required: false
+      dxvk_ref:
+        description: "FaithLife-Community/dxvk branch, tag or commit to bundle (run '<AppImage> dxvk-install'); empty = no DXVK"
+        default: "logos/combined"
+        required: false
 
 permissions:
   contents: write   # publish the release
@@ -197,9 +201,59 @@ jobs:
           compression-level: 0   # already xz-compressed
           retention-days: 30
 
+  # Our DXVK, built as the fork's own "Artifacts (Package)" workflow does, to bundle in
+  # the AppImage under opt/dxvk. It isn't installed into prefixes by itself: that takes
+  # "<AppImage> dxvk-install" (appimage/dxvk-install).
+  dxvk:
+    name: Build DXVK
+    if: inputs.dxvk_ref != ''
+    runs-on: ubuntu-latest
+    container: archlinux/archlinux:base-devel
+    outputs:
+      version: ${{ steps.build.outputs.version }}
+    steps:
+      - name: Prerequisites
+        run: |
+          pacman -Syu --needed --noconfirm git meson mingw-w64-gcc glslang
+          git config --global --add safe.directory '*'
+
+      - uses: actions/checkout@v4
+        with:
+          repository: FaithLife-Community/dxvk
+          ref: ${{ inputs.dxvk_ref }}
+          submodules: recursive
+          fetch-depth: 0
+          path: dxvk
+
+      - name: Build
+        id: build
+        env:
+          IN_REF: ${{ inputs.dxvk_ref }}
+        run: |
+          cd dxvk
+          commit=$(git rev-parse --short=12 HEAD)
+          base=$(git describe --tags --abbrev=0 2>/dev/null || echo unknown)
+          version="${IN_REF##*/}-${commit}"
+          ./package-release.sh "$version" ../dxvk-out --no-package
+          out="../dxvk-out/dxvk-$version"
+          cp LICENSE "$out/LICENSE"
+          printf 'DXVK %s (FaithLife-Community/dxvk %s, commit %s, based on %s)\n' \
+            "$version" "$IN_REF" "$(git rev-parse HEAD)" "$base" > "$out/VERSION"
+          cat "$out/VERSION"; ls -R "$out" | head -20
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          mv "$out" ../dxvk-bundle
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dxvk
+          path: dxvk-bundle
+          retention-days: 30
+
   appimage:
     name: Package AppImage and release
-    needs: wine
+    needs: [wine, dxvk]
+    # Runs without DXVK too (dxvk_ref empty skips that job).
+    if: ${{ !cancelled() && needs.wine.result == 'success' && (needs.dxvk.result == 'success' || needs.dxvk.result == 'skipped') }}
     # Pinned: appimage-builder 1.0.3 drives the host's apt, and this job failed within
     # seconds once ubuntu-latest started moving to Ubuntu 26.04 (October 2026; its apt 3
     # dropped apt-key). The recipe was proven on 24.04. Revisit when 24.04 is retired.
@@ -212,6 +266,12 @@ jobs:
         with:
           name: wine-tarball
           path: wine-tarball
+
+      - uses: actions/download-artifact@v4
+        if: needs.dxvk.result == 'success'
+        with:
+          name: dxvk
+          path: dxvk-bundle
 
       - name: Prerequisites
         run: |
@@ -262,6 +322,13 @@ jobs:
           mkdir -p out
           (cd appimage && ../squashfs-root/AppRun --skip-appimage --recipe recipe.yml)
 
+          # Our DXVK, and the commands that put it into a prefix and take it out again.
+          if [ -d dxvk-bundle/x64 ]; then
+            cp -a dxvk-bundle appimage/AppDir/opt/dxvk
+            install -m 755 appimage/dxvk-install appimage/dxvk-uninstall appimage/AppDir/bin/
+            echo "Bundled $(cat appimage/AppDir/opt/dxvk/VERSION)"
+          fi
+
           export ARCH="$(uname -m)"
           export APPIMAGE_EXTRACT_AND_RUN=1
           export URUNTIME_PRELOAD=0
@@ -295,6 +362,8 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           IN_TYPE: ${{ inputs.release_type }}
           IN_WINE_REPO: ${{ inputs.wine_repo }}
+          IN_DXVK_REF: ${{ inputs.dxvk_ref }}
+          DXVK_VERSION: ${{ needs.dxvk.outputs.version }}
           BRANCH: ${{ needs.wine.outputs.branch }}
           COMMIT: ${{ needs.wine.outputs.commit }}
           VERSION: ${{ needs.wine.outputs.version }}
@@ -319,6 +388,12 @@ jobs:
           notes="${what} of Wine ${VERSION} from ${IN_WINE_REPO} branch ${BRANCH} (commit ${short}).
           The AppImage, plus a tarball of the same bundled folder for systems without FUSE.
           See docs/building.md for testing and publishing."
+          if [ -n "$DXVK_VERSION" ]; then
+            notes="${notes}
+
+          Bundles DXVK ${DXVK_VERSION} (FaithLife-Community/dxvk ${IN_DXVK_REF}), not installed by default:
+          WINEPREFIX=<prefix> ./<AppImage> dxvk-install (and dxvk-uninstall). Needs a Vulkan 1.4 driver."
+          fi
           # Only replace an earlier build with this tag while it is still a draft. A published
           # release may be what OuDedetai is offering users right now, so never delete it.
           # A draft has no git tag yet, so delete it by id: "gh release delete --cleanup-tag"

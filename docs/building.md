@@ -93,6 +93,21 @@ chroot has FFmpeg but `winedmo.so` wasn't linked against it. Bootstraps made bef
 FFmpeg was added have none, and then builds have no `winedmo.so`: run *Bootstraps CI*
 again.
 
+**DXVK.** With the `dxvk_ref` input (default `logos/combined`; empty for none), the
+*Build DXVK* job builds that branch, tag or commit of
+[FaithLife-Community/dxvk](https://github.com/FaithLife-Community/dxvk) the way the
+fork's own *Artifacts (Package)* workflow does, and the AppImage carries it in
+`opt/dxvk/` (`x64/`, `x32/`, `VERSION`, `LICENSE`). It is **not** used until it is put
+into a prefix:
+
+    WINEPREFIX=<prefix> ./wine-custom_….AppImage dxvk-install     # d3d8/9/10core/11, dxgi as native
+    WINEPREFIX=<prefix> ./wine-custom_….AppImage dxvk-uninstall   # back to Wine's own Direct3D
+
+For a test tool that wants a DXVK folder instead (`DXVK_DIR` in the renderer-test kit),
+`./wine-custom_….AppImage --appimage-extract 'opt/dxvk/*'` unpacks it to
+`squashfs-root/opt/dxvk`. DXVK needs a Vulkan 1.4 driver (Mesa 25+, NVIDIA 575+). The
+release notes name the DXVK commit.
+
 The build uses `EXPERIMENTAL_WOW64=true`: a 64-bit Wine that also runs 32-bit Windows
 programs without 32-bit Linux libraries. Keep it that way.
 
