@@ -19,19 +19,23 @@ else
   VENDOR=""
 fi
 
+icd=/usr/share/vulkan/icd.d
 case "$VENDOR" in
-  *[Ii]ntel*)
-    export VK_ICD_FILENAMES="/usr/share/vulkan/icd.d/intel_icd.i686.json:/usr/share/vulkan/icd.d/intel_icd.x86_64.json"
-    ;;
-  *[Nn][Vv][Ii][Dd][Ii][Aa]*)
-    export VK_ICD_FILENAMES="/usr/share/vulkan/icd.d/nvidia_icd.json"
-    ;;
-  *[Rr]adeon*|*AMD*|*X\.Org*)
-    export VK_ICD_FILENAMES="/usr/share/vulkan/icd.d/radeon_icd.i686.json:/usr/share/vulkan/icd.d/radeon_icd.x86_64.json"
-    ;;
-  *)
-    ;;
+  *[Ii]ntel*)                    icds="$icd/intel_icd.i686.json $icd/intel_icd.x86_64.json" ;;
+  *[Nn][Vv][Ii][Dd][Ii][Aa]*)    icds="$icd/nvidia_icd.json /etc/vulkan/icd.d/nvidia_icd.json" ;;
+  *[Rr]adeon*|*AMD*|*X\.Org*)    icds="$icd/radeon_icd.i686.json $icd/radeon_icd.x86_64.json" ;;
+  *)                             icds="" ;;
 esac
+# Point Vulkan at the GPU's own driver files, but only those that exist: a list of
+# missing files leaves Vulkan with no driver at all. If none exist (other names or
+# places), leave VK_ICD_FILENAMES alone so the loader finds the drivers itself.
+if [ -z "${VK_ICD_FILENAMES:-}" ]; then
+  found=""
+  for f in $icds; do
+    [ -f "$f" ] && found="${found:+$found:}$f"
+  done
+  [ -n "$found" ] && export VK_ICD_FILENAMES="$found"
+fi
 
 # Load winecfg if no arguments given
 APPLICATION=""

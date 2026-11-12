@@ -68,6 +68,10 @@ AppDir:
       - etc/init.d
       - etc/logrotate.d
       - lib/modprobe.d
+      # The Vulkan loader vulkan-tools pulls in (focal: 1.2.131) can't load current
+      # drivers (Mesa 25+: Vulkan 1.4), so Wine's Vulkan and DXVK failed to start.
+      # Use the system's loader, which matches its drivers.
+      - usr/lib/x86_64-linux-gnu/libvulkan.so*
       - lib/systemd
       - lib/udev
       - usr/lib/mime
