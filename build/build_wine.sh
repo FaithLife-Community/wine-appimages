@@ -347,6 +347,97 @@ export CROSSCXXFLAGS="${CROSSCFLAGS_X64}"
 # whose pkg-config files are found first; make Wine use the FFmpeg we bundle instead.
 export PKG_CONFIG_PATH="/usr/local/lib/pkgconfig${PKG_CONFIG_PATH:+:${PKG_CONFIG_PATH}}"
 
+# Hardware video decoding for winedmo. The bootstrap's FFmpeg is built without
+# hardware decoders, so build our own here, with:
+#   VA-API (Intel, AMD; NVIDIA with nvidia-vaapi-driver), linked to libva, which we
+#     bundle. The host's VA driver must be built against a libva no newer than
+#     ours, so keep LIBVA_VERSION at the latest release.
+#   NVDEC (NVIDIA's driver): headers only, FFmpeg loads libcuda/libnvcuvid at run time.
+#     The oldest headers FFmpeg accepts work with the widest range of drivers.
+#   Vulkan Video: FFmpeg loads libvulkan at run time.
+# libdrm is only built against; the host's must match its GPU drivers, so it isn't
+# bundled. HWDEC=false keeps the bootstrap's software-only FFmpeg.
+HWDEC="${HWDEC:-true}"
+HWDEC_PREFIX="${BUILD_DIR}"/hwdec
+FFMPEG_LIBDIR="${BOOTSTRAP_X64}"/usr/local/lib
+FFMPEG_INCDIR="${BOOTSTRAP_X64}"/usr/local/include
+if [ "${HWDEC}" = "true" ]; then
+	FFMPEG_HW_VERSION=7.1.1
+	LIBVA_VERSION=2.24.1
+	LIBDRM_VERSION=2.4.124
+	NVCODEC_VERSION=n12.0.16.1
+	NASM_VERSION=2.16.03
+
+	mkdir -p "${BUILD_DIR}"/hwdec-src
+	cd "${BUILD_DIR}"/hwdec-src || exit 1
+	wget -q -O ffmpeg.tar.xz "https://ffmpeg.org/releases/ffmpeg-${FFMPEG_HW_VERSION}.tar.xz" &&
+	echo "26f2bd7d20c6c616f31d7130c88d7250  ffmpeg.tar.xz" | md5sum -c - &&
+	wget -q -O libva.tar.gz "https://github.com/intel/libva/archive/refs/tags/${LIBVA_VERSION}.tar.gz" &&
+	wget -q -O libdrm.tar.xz "https://dri.freedesktop.org/libdrm/libdrm-${LIBDRM_VERSION}.tar.xz" &&
+	wget -q -O nv-codec-headers.tar.gz "https://github.com/FFmpeg/nv-codec-headers/archive/refs/tags/${NVCODEC_VERSION}.tar.gz" &&
+	wget -q -O nasm.tar.xz "https://www.nasm.us/pub/nasm/releasebuilds/${NASM_VERSION}/nasm-${NASM_VERSION}.tar.xz" || {
+		echo "Failed to download the hardware decoding sources"
+		exit 1
+	}
+	for f in *.tar.*; do tar xf "$f"; done
+
+	cat > build-hwdec.sh <<-HWEOF
+	#!/bin/bash
+	set -e
+	export CC=gcc-12 CXX=g++-12 CFLAGS=-O2 CXXFLAGS=-O2
+	export PATH="${HWDEC_PREFIX}/bin:\$PATH"
+	export PKG_CONFIG_PATH="${HWDEC_PREFIX}/lib/pkgconfig:/usr/local/lib/pkgconfig"
+	src="${BUILD_DIR}/hwdec-src"
+
+	cd "\$src"/nasm-${NASM_VERSION}
+	./configure --prefix="${HWDEC_PREFIX}"
+	make -j\$(nproc) install
+
+	cd "\$src"/nv-codec-headers-${NVCODEC_VERSION}
+	make PREFIX="${HWDEC_PREFIX}" install
+
+	cd "\$src"/libdrm-${LIBDRM_VERSION}
+	meson setup build --prefix="${HWDEC_PREFIX}" --libdir=lib -Dintel=disabled -Dradeon=disabled \
+		-Damdgpu=disabled -Dnouveau=disabled -Dvmwgfx=disabled -Dfreedreno=disabled \
+		-Dvc4=disabled -Detnaviv=disabled -Dexynos=disabled -Domap=disabled -Dtegra=disabled \
+		-Dcairo-tests=disabled -Dman-pages=disabled -Dvalgrind=disabled -Dtests=false
+	meson install -C build
+
+	# Look for VA drivers where distributions put them; LIBVA_DRIVERS_PATH still overrides.
+	cd "\$src"/libva-${LIBVA_VERSION}
+	meson setup build --prefix="${HWDEC_PREFIX}" --libdir=lib -Dwith_x11=no -Dwith_glx=no \
+		-Dwith_wayland=no -Denable_docs=false \
+		-Ddriverdir=/usr/lib/x86_64-linux-gnu/dri:/usr/lib64/dri:/usr/lib/dri:/usr/local/lib/x86_64-linux-gnu/dri:/usr/local/lib/dri
+	meson install -C build
+
+	# As the bootstrap's FFmpeg (see create_ubuntu_bootstraps.sh), plus hardware decoders.
+	ffconf () {
+		"\$src"/ffmpeg-${FFMPEG_HW_VERSION}/configure --prefix="${HWDEC_PREFIX}" --enable-shared --disable-static \
+			--disable-programs --disable-doc --disable-debug --disable-autodetect --enable-zlib \
+			--disable-avdevice --disable-avfilter --disable-swscale --disable-network \
+			--disable-encoders --disable-muxers --disable-indevs --disable-outdevs \
+			--enable-vaapi --enable-ffnvcodec --enable-nvdec "\$@"
+	}
+	rm -rf "\$src"/ffbuild; mkdir "\$src"/ffbuild; cd "\$src"/ffbuild
+	if ! ffconf --enable-vulkan; then
+		echo "FFmpeg doesn't configure with Vulkan here, building without Vulkan decoding"
+		ffconf
+	fi
+	make -j\$(nproc) install
+	grep -E "^#define CONFIG_(VAAPI|NVDEC|VULKAN|H264_VAAPI_HWACCEL|H264_NVDEC_HWACCEL|H264_VULKAN_HWACCEL) " config.h
+	HWEOF
+	chmod +x build-hwdec.sh
+	if ! ${BWRAP64} "${BUILD_DIR}"/hwdec-src/build-hwdec.sh; then
+		echo "Failed to build FFmpeg with hardware decoding"
+		exit 1
+	fi
+	FFMPEG_LIBDIR="${HWDEC_PREFIX}"/lib
+	FFMPEG_INCDIR="${HWDEC_PREFIX}"/include
+	export PKG_CONFIG_PATH="${HWDEC_PREFIX}/lib/pkgconfig:${PKG_CONFIG_PATH}"
+	# libavutil needs libva: let the linker find it when linking winedmo.so
+	export LDFLAGS="-Wl,-rpath-link,${HWDEC_PREFIX}/lib${LDFLAGS:+ ${LDFLAGS}}"
+fi
+
 mkdir "${BUILD_DIR}"/build64
 cd "${BUILD_DIR}"/build64 || exit
 ${BWRAP64} "${BUILD_DIR}"/wine/configure ${WINE_BUILD_OPTIONS} --prefix "${BUILD_DIR}"/wine-"${BUILD_NAME}"-amd64
@@ -395,7 +486,7 @@ for build in ${builds_list}; do
 		# FFmpeg libraries next to it and point its RUNPATH there, so the build doesn't
 		# depend on whichever FFmpeg (and soname) the host has.
 		unixdir="${build}"/lib/wine/x86_64-unix
-		if ls "${BOOTSTRAP_X64}"/usr/local/lib/libavformat.so.* >/dev/null 2>&1; then
+		if ls "${FFMPEG_LIBDIR}"/libavformat.so.* >/dev/null 2>&1; then
 			if ! command -v patchelf >/dev/null; then
 				echo "patchelf is required to bundle FFmpeg"
 				exit 1
@@ -404,7 +495,15 @@ for build in ${builds_list}; do
 				echo "FFmpeg is in the bootstrap but winedmo.so wasn't built with it"
 				exit 1
 			fi
-			cp -a "${BOOTSTRAP_X64}"/usr/local/lib/lib{avformat,avcodec,avutil,swresample}.so.* "${unixdir}"/ 2>/dev/null
+			cp -a "${FFMPEG_LIBDIR}"/lib{avformat,avcodec,avutil,swresample}.so.* "${unixdir}"/ 2>/dev/null
+			# libva for VA-API decoding (MIT); not libdrm, whose host copy must match the GPU drivers.
+			if ls "${FFMPEG_LIBDIR}"/libva.so.* >/dev/null 2>&1; then
+				cp -a "${FFMPEG_LIBDIR}"/libva{,-drm}.so.* "${unixdir}"/
+				for f in "${unixdir}"/libva{,-drm}.so.*; do
+					[ -f "$f" ] && [ ! -L "$f" ] && strip --strip-unneeded "$f" && patchelf --set-rpath '$ORIGIN' "$f"
+				done
+				echo "Bundled libva: $(cd "${unixdir}" && ls libva*.so.* | tr '\n' ' ')"
+			fi
 			# Every FFmpeg library winedmo.so needs must be one we bundle (same soname).
 			for lib in $(readelf -d "${unixdir}"/winedmo.so | sed -n 's/.*Shared library: \[\(lib\(av\|sw\)[a-z]*\.so\.[0-9]*\)\]/\1/p'); do
 				if [ ! -e "${unixdir}/${lib}" ]; then
@@ -418,12 +517,13 @@ for build in ${builds_list}; do
 			for f in "${unixdir}"/winedmo.so "${unixdir}"/lib{avformat,avcodec,avutil,swresample}.so.*; do
 				[ -f "$f" ] && [ ! -L "$f" ] && patchelf --set-rpath '$ORIGIN' "$f"
 			done
-			ffver=$(sed -n 's/^#define FFMPEG_VERSION "\(.*\)"/\1/p' "${BOOTSTRAP_X64}"/usr/local/include/libavutil/ffversion.h 2>/dev/null)
+			ffver=$(sed -n 's/^#define FFMPEG_VERSION "\(.*\)"/\1/p' "${FFMPEG_INCDIR}"/libavutil/ffversion.h 2>/dev/null)
 			cat > "${unixdir}"/FFMPEG-README.txt <<-FFEOF
 			These libav* libraries are FFmpeg ${ffver:-unknown}, unmodified, built as shared libraries
 			under the GNU LGPL 2.1 or later; the licence text is in COPYING.LGPL-2.1 here.
 			Source: https://ffmpeg.org/releases/ffmpeg-${ffver}.tar.xz
-			Build recipe: build/create_ubuntu_bootstraps.sh in
+			Build recipe: build/build_wine.sh (with hardware decoding) or
+			build/create_ubuntu_bootstraps.sh in
 			https://github.com/FaithLife-Community/wine-appimages
 			FFEOF
 			cp wine/COPYING.LIB "${unixdir}"/COPYING.LGPL-2.1
