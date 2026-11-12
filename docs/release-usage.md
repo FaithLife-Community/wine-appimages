@@ -70,7 +70,7 @@ with any other Wine it keeps suppressing Logos's application updates.
 ## Quick setup for testers
 
 Sets up an existing OuDedetai prefix for this build in one go: DXVK (or OpenGL where the
-GPU can't run it), the FFmpeg media source, and the Logos update setting. Close Logos
+GPU can't run it), the FFmpeg media source, the Logos update setting and printing. Close Logos
 first, then set `WINE` to this build (the AppImage, or the tarball's `bin/wine`):
 
 ```bash
@@ -80,8 +80,19 @@ if [[ $WINE == *.AppImage ]]; then DXVK_INSTALL=("$WINE" dxvk-install); else DXV
 "${DXVK_INSTALL[@]}"; case $? in 0) echo "Renderer: DXVK";; 3) echo "Renderer: OpenGL (no Vulkan 1.4 for DXVK)";; *) echo "dxvk-install failed";; esac
 "$WINE" reg add 'HKCU\Software\Wine\MediaFoundation' /v DisableGstByteStreamHandler /t REG_DWORD /d 1 /f
 "$WINE" reg add 'HKCU\Software\Wine\MSI' /v IgnoreFailedActions /t REG_MULTI_SZ /d RegisterStubMsixPackage /f
+# Printing: WPF prints through GDI (wineps -> CUPS), and stand-ins for the fonts Logos's print preview needs
+"$WINE" reg add 'HKCU\Software\Microsoft\.NETFramework\Windows Presentation Foundation\Printing' /v DisableXPSOMPrinting /t REG_DWORD /d 1 /f
+R='HKCU\Software\Wine\Fonts\Replacements'
+"$WINE" reg add "$R" /v "Segoe UI" /t REG_MULTI_SZ /d 'Selawik\0Noto Sans\0Liberation Sans\0DejaVu Sans' /f
+"$WINE" reg add "$R" /v "Times New Roman" /t REG_MULTI_SZ /d 'Liberation Serif\0Tinos\0Nimbus Roman' /f
+"$WINE" reg add "$R" /v "Courier New" /t REG_MULTI_SZ /d 'Liberation Mono\0Cousine\0Nimbus Mono PS' /f
+"$WINE" reg add "$R" /v "Microsoft Sans Serif" /t REG_MULTI_SZ /d 'Liberation Sans\0Arimo\0Nimbus Sans' /f
+"$WINE" reg add "$R" /v "Calibri" /t REG_MULTI_SZ /d 'Carlito\0Liberation Sans\0Arimo' /f
 "$WINE" wineserver -w
 ```
+
+The printing and font settings match what current OuDedetai sets on install; they're here for
+prefixes made by older versions.
 
 To also try the FFmpeg decoders: `"$WINE" reg add 'HKCU\Software\Wine\MediaFoundation' /v DisableGstDecoders /t REG_DWORD /d 1 /f`
 (`/d 0` goes back to GStreamer). To go back to Wine's own Direct3D: `dxvk-uninstall` the same way as `dxvk-install`.
