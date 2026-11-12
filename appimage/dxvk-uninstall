@@ -2,16 +2,27 @@
 # dxvk-uninstall: take DXVK out of a Wine prefix and go back to Wine's own Direct3D.
 #
 #   WINEPREFIX=<prefix> <AppImage> dxvk-uninstall
+#   WINEPREFIX=<prefix> <tarball folder>/bin/dxvk-uninstall
 #
 # Removes the DLL overrides dxvk-install set, deletes the DXVK DLLs (only files that
-# are DXVK) and has wineboot put Wine's builtin DLLs back.
+# are DXVK) and has wineboot put Wine's builtin DLLs back. Leaves the renderer setting
+# alone. --quiet: no message.
 set -euo pipefail
 
-WINE="$APPDIR/usr/bin/wine"
+HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+if [ -n "${APPDIR:-}" ] && [ -x "$APPDIR/usr/bin/wine" ]; then
+	BIN="$APPDIR/usr/bin"
+else
+	BIN="$HERE"
+fi
+WINE="$BIN/wine" WINESERVER="$BIN/wineserver"
 DLLS="d3d8 d3d9 d3d10core d3d11 dxgi"
+: "${WINEPREFIX:=$HOME/.wine}"
+export WINEPREFIX WINESERVER
 
 [ -d "$WINEPREFIX/drive_c/windows/system32" ] || { echo "dxvk-uninstall: no Wine prefix at $WINEPREFIX" >&2; exit 1; }
 
+removed=0
 for dll in $DLLS; do
 	"$WINE" reg delete 'HKCU\Software\Wine\DllOverrides' /v "$dll" /f >/dev/null 2>&1 || true
 	for dir in system32 syswow64; do
@@ -19,9 +30,10 @@ for dll in $DLLS; do
 		# Wine's own DLLs say so; leave anything that isn't DXVK alone.
 		if [ -f "$f" ] && grep -qai "dxvk" "$f" && ! grep -qa "Wine builtin DLL" "$f"; then
 			rm -f "$f"
+			removed=1
 		fi
 	done
 done
-"$WINE" wineboot -u
-"$APPDIR/usr/bin/wineserver" -w
-echo "Removed DXVK from $WINEPREFIX"
+[ $removed = 1 ] && "$WINE" wineboot -u
+"$WINESERVER" -w
+[ "${1:-}" = --quiet ] || echo "Removed DXVK from $WINEPREFIX"

@@ -1,20 +1,59 @@
 #!/bin/bash
-# dxvk-install: put the DXVK bundled in this AppImage into a Wine prefix.
+# dxvk-install: use our DXVK in a Wine prefix when the GPU can run it, otherwise Wine's
+# OpenGL renderer.
 #
-#   WINEPREFIX=<prefix> <AppImage> dxvk-install
+#   WINEPREFIX=<prefix> <AppImage> dxvk-install [--check|--force]
+#   WINEPREFIX=<prefix> <tarball folder>/bin/dxvk-install [--check|--force]
 #
-# Copies DXVK's d3d8, d3d9, d3d10core, d3d11 and dxgi into the prefix (64-bit to
-# system32, 32-bit to syswow64) and sets them to load as native. Undo with
-# "<AppImage> dxvk-uninstall". DXVK needs a Vulkan 1.4 driver (Mesa 25+, NVIDIA 575+).
+# First runs vk14probe.exe through Wine, which asks Wine's Vulkan (as DXVK will) for a
+# GPU with Vulkan 1.4, which DXVK needs (Mesa 25+, NVIDIA 575+). Then:
+#   found:     copies DXVK's d3d8, d3d9, d3d10core, d3d11 and dxgi into the prefix
+#              (64-bit to system32, 32-bit to syswow64) and sets them native. Exit 0.
+#   not found: takes DXVK out of the prefix if it was there and sets Wine's Direct3D
+#              renderer to OpenGL (HKCU\Software\Wine\Direct3D renderer=gl). Exit 3.
+# --check only runs the probe (exit 0: DXVK can run; otherwise not) and changes nothing.
+# --force installs DXVK without the check. Undo with dxvk-uninstall.
 set -euo pipefail
 
-DXVK="$APPDIR/opt/dxvk"
-WINE="$APPDIR/usr/bin/wine"
+# Works from the AppImage ($APPDIR set, DXVK in opt/dxvk) and from the tarball (this
+# script in <folder>/bin, DXVK in <folder>/dxvk).
+HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+if [ -n "${APPDIR:-}" ] && [ -d "$APPDIR/opt/dxvk" ]; then
+	DXVK="$APPDIR/opt/dxvk" BIN="$APPDIR/usr/bin"
+else
+	DXVK="$HERE/../dxvk" BIN="$HERE"
+fi
+WINE="$BIN/wine" WINESERVER="$BIN/wineserver"
 DLLS="d3d8 d3d9 d3d10core d3d11 dxgi"
+: "${WINEPREFIX:=$HOME/.wine}"
+export WINEPREFIX WINESERVER
 
 die() { echo "dxvk-install: $*" >&2; exit 1; }
-[ -d "$DXVK/x64" ] || die "this AppImage has no DXVK bundled"
+[ -d "$DXVK/x64" ] || die "no DXVK bundled here ($DXVK)"
+[ -x "$WINE" ] || die "no Wine at $WINE"
 [ -d "$WINEPREFIX/drive_c/windows/system32" ] || die "no Wine prefix at $WINEPREFIX (run wineboot first)"
+
+mode=${1:-}
+case "$mode" in ""|--check|--force) ;; *) die "unknown option $mode (use --check or --force)" ;; esac
+
+if [ "$mode" != --force ]; then
+	echo "Checking for a GPU with Vulkan 1.4 (needed by DXVK)..."
+	if WINEDEBUG=-all "$WINE" "$DXVK/vk14probe.exe"; then
+		ok=1
+	else
+		ok=0
+	fi
+	if [ "$mode" = --check ]; then
+		[ $ok = 1 ] && exit 0 || exit 3
+	fi
+	if [ $ok = 0 ]; then
+		echo "No Vulkan 1.4 GPU: using Wine's OpenGL renderer instead of DXVK."
+		"$HERE/dxvk-uninstall" --quiet 2>/dev/null || true
+		"$WINE" reg add 'HKCU\Software\Wine\Direct3D' /v renderer /d gl /f >/dev/null
+		"$WINESERVER" -w
+		exit 3
+	fi
+fi
 
 copy() {
 	local from=$1 to=$2 dll
@@ -29,7 +68,6 @@ copy "$DXVK/x32" "$WINEPREFIX/drive_c/windows/syswow64"
 for dll in $DLLS; do
 	"$WINE" reg add 'HKCU\Software\Wine\DllOverrides' /v "$dll" /d native /f >/dev/null
 done
-"$APPDIR/usr/bin/wineserver" -w
+"$WINESERVER" -w
 
-cat "$DXVK/VERSION" 2>/dev/null | sed 's/^/Installed /' || echo "Installed DXVK"
-echo "into $WINEPREFIX"
+echo "Installed $(head -1 "$DXVK/VERSION" 2>/dev/null || echo DXVK) into $WINEPREFIX"

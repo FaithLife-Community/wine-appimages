@@ -1,8 +1,9 @@
 name: Build Wine AppImage
 
 # Builds Wine from a branch of a Wine git repository (by default a patch branch of
-# FaithLife-Community/wine), wraps it into an AppImage plus a plain "bundled" tarball,
-# and uploads both to a DRAFT release. A maintainer publishes it after testing.
+# FaithLife-Community/wine), with our DXVK, into an AppImage plus a tarball of just the
+# Wine folder (faster to start), and uploads both to a DRAFT release with notes listing
+# every patch and a usage guide. A maintainer publishes it after testing.
 #
 # release_type decides which branch may be built and how the build is named
 # (see docs/building.md):
@@ -243,6 +244,16 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           mv "$out" ../dxvk-bundle
 
+      - uses: actions/checkout@v4
+        with:
+          path: wine-appimages
+
+      # dxvk-install runs this to decide between DXVK and Wine's OpenGL renderer.
+      - name: Build the Vulkan 1.4 probe
+        run: |
+          x86_64-w64-mingw32-gcc -O2 -Wall -s -o dxvk-bundle/vk14probe.exe wine-appimages/appimage/vk14probe.c
+          ls -l dxvk-bundle
+
       - uses: actions/upload-artifact@v4
         with:
           name: dxvk
@@ -334,12 +345,20 @@ jobs:
           export URUNTIME_PRELOAD=0
           appimagetool --no-appstream appimage/AppDir "out/$name.AppImage"
 
-          # The same AppDir as a plain tarball, for distros that dislike AppImages.
-          # Unpack anywhere and run ./<dir>/AppRun (it needs no FUSE and no installation).
-          # Named "<name>.bundle.tar.xz" so it sorts after "<name>.AppImage": GitHub lists a
-          # release's assets by name, and OuDedetai downloads the first one.
-          cp -a appimage/AppDir "$name.bundle"
-          tar -cf - "$name.bundle" | xz -T0 -9 > "out/$name.bundle.tar.xz"
+          # The tarball: just the Wine folder (with FFmpeg, the stand-in fonts and the
+          # wine.inf changes the recipe made), our DXVK and its commands, and the usage
+          # guide; none of the AppImage's runtime, wrapper or bundled tools. It starts
+          # faster than the AppImage (nothing to mount). One top-level folder with bin/wine,
+          # as OuDedetai expects ("Recommended Bundled", any *.tar.xz asset). Named
+          # "<name>.tar.xz" so it sorts after "<name>.AppImage": GitHub lists a release's
+          # assets by name, and OuDedetai's AppImage choice downloads the first one.
+          cp -a appimage/AppDir/opt/wine-devel "$name"
+          if [ -d appimage/AppDir/opt/dxvk ]; then
+            cp -a appimage/AppDir/opt/dxvk "$name/dxvk"
+            install -m 755 appimage/dxvk-install appimage/dxvk-uninstall "$name/bin/"
+          fi
+          cp docs/release-usage.md "$name/README.md"
+          tar -cf - "$name" | xz -T0 -9 > "out/$name.tar.xz"
           ls -l out
 
       - name: Report size and glibc requirement
@@ -354,6 +373,8 @@ jobs:
           {
             echo "### $(basename "$f")"
             echo "- AppImage: $(du -h "$f" | cut -f1), unpacked: $(du -sh "$d/squashfs-root" | cut -f1)"
+            t=$(ls out/*.tar.xz)
+            echo "- tarball: $(du -h "$t" | cut -f1), unpacked: $(xz -dc "$t" | wc -c | numfmt --to=iec)"
             echo "- newest glibc symbol needed by wineserver/ntdll.so: ${need:-unknown}"
           } | tee -a "$GITHUB_STEP_SUMMARY"
 
@@ -368,6 +389,7 @@ jobs:
           COMMIT: ${{ needs.wine.outputs.commit }}
           VERSION: ${{ needs.wine.outputs.version }}
           TAG: ${{ steps.name.outputs.tag }}
+          NAME: ${{ steps.name.outputs.name }}
         run: |
           tag="$TAG"
           short=$(printf '%s' "$COMMIT" | cut -c1-12)
@@ -385,15 +407,11 @@ jobs:
               prerelease=--prerelease
               what="Untested build" ;;
           esac
-          notes="${what} of Wine ${VERSION} from ${IN_WINE_REPO} branch ${BRANCH} (commit ${short}).
-          The AppImage, plus a tarball of the same bundled folder for systems without FUSE.
-          See docs/building.md for testing and publishing."
-          if [ -n "$DXVK_VERSION" ]; then
-            notes="${notes}
-
-          Bundles DXVK ${DXVK_VERSION} (FaithLife-Community/dxvk ${IN_DXVK_REF}), not installed by default:
-          WINEPREFIX=<prefix> ./<AppImage> dxvk-install (and dxvk-uninstall). Needs a Vulkan 1.4 driver."
-          fi
+          # Download guide, DXVK, the full patch table (commits not on the Wine repository's
+          # master, i.e. not upstream) and the usage guide (docs/release-usage.md).
+          WHAT="$what" WINE_REPO="$IN_WINE_REPO" DXVK_REF="$IN_DXVK_REF" \
+            build/release-notes.sh > notes.md
+          { echo "### Release notes"; head -c 3000 notes.md; } >> "$GITHUB_STEP_SUMMARY"
           # Only replace an earlier build with this tag while it is still a draft. A published
           # release may be what OuDedetai is offering users right now, so never delete it.
           # A draft has no git tag yet, so delete it by id: "gh release delete --cleanup-tag"
@@ -417,9 +435,9 @@ jobs:
           # OuDedetai downloads the FIRST asset. GitHub orders assets by name, not upload
           # order, which the file names above take care of; the check below confirms it.
           gh release create "$tag" --draft $prerelease --target "$GITHUB_SHA" \
-            --title "$title" --notes "$notes" \
+            --title "$title" --notes-file notes.md \
             --repo "$GITHUB_REPOSITORY" out/*.AppImage
-          gh release upload "$tag" out/*.bundle.tar.xz --repo "$GITHUB_REPOSITORY"
+          gh release upload "$tag" out/*.tar.xz --repo "$GITHUB_REPOSITORY"
           first=$(gh api "repos/$GITHUB_REPOSITORY/releases" --jq ".[] | select(.tag_name == \"$tag\") | .assets[0].name")
           case "$first" in
             *.AppImage) echo "First asset: $first" ;;
