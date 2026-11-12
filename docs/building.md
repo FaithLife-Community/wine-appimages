@@ -63,9 +63,18 @@ newest release by publication date.
 A **draft** release with the tag from the table above, containing, in this order:
 
 - `wine-custom_<version>_<name>-x86_64.AppImage`
-- `wine-custom_<version>_<name>-x86_64.bundle.tar.xz`: the same folder as a plain
-  tarball, for systems without FUSE or that dislike AppImages. Unpack anywhere and run
-  `./<folder>/AppRun`.
+- `wine-custom_<version>_<name>-x86_64.tar.xz`: just the Wine folder (`bin/`, `lib/`,
+  `share/` with FFmpeg and the stand-in fonts), our DXVK in `dxvk/` with
+  `bin/dxvk-install` and `bin/dxvk-uninstall`, and `README.md` (the usage guide). None of
+  the AppImage's runtime, wrapper or bundled tools, and compressed once. It starts
+  faster than the AppImage, and is what OuDedetai's *Recommended Bundled* choice
+  downloads (one top-level folder with `bin/wine`). Unpack anywhere and run
+  `./<folder>/bin/wine`.
+
+The release notes (`build/release-notes.sh`) give a download guide, the DXVK version,
+a table of **every patch**: each commit on the branch that isn't on the Wine
+repository's `master` (FaithLife-Community/wine's `master` mirrors upstream), merges
+left out, oldest first, with links, and the usage guide from `docs/release-usage.md`.
 
 The bare Wine tarball is kept for 30 days as the run's `wine-tarball` artifact, which
 is useful for local testing. Both jobs' summary pages show the source commit, the sizes,
@@ -97,16 +106,26 @@ again.
 *Build DXVK* job builds that branch, tag or commit of
 [FaithLife-Community/dxvk](https://github.com/FaithLife-Community/dxvk) the way the
 fork's own *Artifacts (Package)* workflow does, and the AppImage carries it in
-`opt/dxvk/` (`x64/`, `x32/`, `VERSION`, `LICENSE`). It is **not** used until it is put
-into a prefix:
+`opt/dxvk/` (`x64/`, `x32/`, `VERSION`, `LICENSE`). The tarball carries it in `dxvk/`. It is
+**not** used until it is put into a prefix:
 
-    WINEPREFIX=<prefix> ./wine-custom_….AppImage dxvk-install     # d3d8/9/10core/11, dxgi as native
+    WINEPREFIX=<prefix> ./wine-custom_….AppImage dxvk-install     # or <folder>/bin/dxvk-install
     WINEPREFIX=<prefix> ./wine-custom_….AppImage dxvk-uninstall   # back to Wine's own Direct3D
 
+`dxvk-install` first runs `vk14probe.exe` (`appimage/vk14probe.c`, built in the DXVK
+job) through Wine, which asks Wine's own Vulkan for a GPU with Vulkan 1.4, as DXVK needs
+(Mesa 25+, NVIDIA 575+). Found: it installs d3d8/9/10core/11 and dxgi as native and exits
+0. Not found: it removes any DXVK it installed before, sets
+`HKCU\Software\Wine\Direct3D\renderer=gl` and exits 3. `--check` only reports;
+`--force` skips the check.
+
 For a test tool that wants a DXVK folder instead (`DXVK_DIR` in the renderer-test kit),
-`./wine-custom_….AppImage --appimage-extract 'opt/dxvk/*'` unpacks it to
-`squashfs-root/opt/dxvk`. DXVK needs a Vulkan 1.4 driver (Mesa 25+, NVIDIA 575+). The
-release notes name the DXVK commit.
+use the tarball's `dxvk/`, or `./wine-custom_….AppImage --appimage-extract 'opt/dxvk/*'`
+(unpacks to `squashfs-root/opt/dxvk`). The release notes name the DXVK commit.
+
+**Vulkan in the AppImage.** The AppImage doesn't bundle a Vulkan loader (the one
+`vulkan-tools` pulls in from focal is too old for current drivers), and the wrapper
+only sets `VK_ICD_FILENAMES` to driver files that exist.
 
 The build uses `EXPERIMENTAL_WOW64=true`: a 64-bit Wine that also runs 32-bit Windows
 programs without 32-bit Linux libraries. Keep it that way.
