@@ -47,7 +47,25 @@ DWORD values under `HKCU\Software\Wine\MediaFoundation`:
 | Value | Effect |
 |---|---|
 | `DisableGstByteStreamHandler=1` | Use the FFmpeg-based media source (winedmo) for Logos videos. Recommended. |
-| `DisableGstDecoders=1` | Also decode H.264/AAC with FFmpeg instead of GStreamer (being tested; leave at 0 unless asked). |
+| `DisableGstDecoders=1` | Also decode H.264/AAC with FFmpeg instead of GStreamer. Optional: it works, including pause, seek and speed changes, but uses a little more CPU than GStreamer for now. |
+
+With `DisableGstDecoders=1`, FFmpeg decodes video on the GPU when it can (NVIDIA through
+NVDEC; AMD and Intel through VA-API; otherwise Vulkan Video), and in software otherwise.
+`WINEDMO_HWACCEL=0` in the environment forces software decoding.
+
+## Logos updates
+
+`wine --version` says `(oinos)` for these builds. They carry two installer fixes that
+make Logos's own updates safe under Wine:
+
+- An update no longer deletes Logos's `Data` folder (the removal of the old version now
+  sees `UPGRADINGPRODUCTCODE`, as on Windows).
+- Custom actions named in `HKCU\Software\Wine\MSI\IgnoreFailedActions` (REG_MULTI_SZ,
+  or REG_SZ separated by `;`) may fail without rolling the installation back. Logos
+  needs `RegisterStubMsixPackage` listed: it registers an MSIX package, which Wine can't.
+
+OuDedetai sets this up and lets Logos update itself only when it sees an `(oinos)` Wine;
+with any other Wine it keeps suppressing Logos's application updates.
 
 ## Reporting problems
 
