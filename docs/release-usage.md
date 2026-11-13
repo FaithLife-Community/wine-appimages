@@ -42,15 +42,17 @@ AppImage sets it for you).
 
 ## Logos media settings
 
-DWORD values under `HKCU\Software\Wine\MediaFoundation`:
+Logos's media plays through FFmpeg by default: the FFmpeg media source and FFmpeg's H.264
+and AAC decoders, with video decoded on the GPU where possible (NVIDIA through NVDEC; AMD and
+Intel through VA-API; otherwise Vulkan Video), and in software otherwise. GStreamer isn't
+needed. It's still used as a fallback when FFmpeg can't open something, and can be chosen
+with these DWORD values under `HKCU\Software\Wine\MediaFoundation`:
 
 | Value | Effect |
 |---|---|
-| `DisableGstByteStreamHandler=1` | Use the FFmpeg-based media source (winedmo) for Logos videos. Recommended. |
-| `DisableGstDecoders=1` | Also decode H.264/AAC with FFmpeg instead of GStreamer. Optional: it works, including pause, seek and speed changes, but uses a little more CPU than GStreamer for now. |
+| `DisableGstByteStreamHandler=0` | Use GStreamer's media source instead of FFmpeg's. |
+| `DisableGstDecoders=0` | Decode H.264/AAC with GStreamer first (needs the host's GStreamer plugins). |
 
-With `DisableGstDecoders=1`, FFmpeg decodes video on the GPU when it can (NVIDIA through
-NVDEC; AMD and Intel through VA-API; otherwise Vulkan Video), and in software otherwise.
 `WINEDMO_HWACCEL=0` in the environment forces software decoding.
 
 ## Logos updates
