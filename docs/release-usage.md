@@ -69,17 +69,20 @@ with any other Wine it keeps suppressing Logos's application updates.
 
 ## Quick setup for testers
 
-Sets up an existing OuDedetai prefix for this build in one go: DXVK (or OpenGL where the
-GPU can't run it), the FFmpeg media source, the Logos update setting and printing. Close Logos
-first; the first line assumes the AppImage was saved to `~/Downloads` (for the tarball,
-use the line in its comment):
+Switches an existing OuDedetai install to this build and sets its prefix up in one go:
+DXVK (or OpenGL where the GPU can't run it), the FFmpeg media source, the Logos update
+setting and printing. Close Logos first. It assumes the AppImage was saved to `~/Downloads`
+and OuDedetai is installed in its default folder (otherwise change the first two lines).
 
 ```bash
-WINE=~/Downloads/@NAME@.AppImage      # or the tarball's: WINE=~/@NAME@/bin/wine
-chmod +x "$WINE"
-export WINEPREFIX=~/.local/share/FaithLife-Community/oudedetai/data/wine64_bottle
-if [[ $WINE == *.AppImage ]]; then DXVK_INSTALL=("$WINE" dxvk-install); else DXVK_INSTALL=("$(dirname "$WINE")/dxvk-install"); fi
-"${DXVK_INSTALL[@]}"; case $? in 0) echo "Renderer: DXVK";; 3) echo "Renderer: OpenGL (no Vulkan 1.4 for DXVK)";; *) echo "dxvk-install failed";; esac
+APPIMAGE=~/Downloads/@NAME@.AppImage
+OUD=~/.local/share/FaithLife-Community/oudedetai
+"$OUD/oudedetai" --set-appimage "$APPIMAGE"     # OuDedetai copies it into its bin folder and uses it from now on
+WINE="$OUD/data/bin/wine"
+export WINEPREFIX="$OUD/data/wine64_bottle"
+"$WINE" --version                               # should say: wine-11.21 (oinos)
+"$WINE" dxvk-install
+case $? in 0) echo "Renderer: DXVK" ;; 3) echo "Renderer: OpenGL (no Vulkan 1.4 for DXVK)" ;; *) echo "dxvk-install failed" ;; esac
 "$WINE" reg add 'HKCU\Software\Wine\MediaFoundation' /v DisableGstByteStreamHandler /t REG_DWORD /d 1 /f
 "$WINE" reg add 'HKCU\Software\Wine\MSI' /v IgnoreFailedActions /t REG_MULTI_SZ /d RegisterStubMsixPackage /f
 # Printing: WPF prints through GDI (wineps -> CUPS), and stand-ins for the fonts Logos's print preview needs
@@ -94,10 +97,9 @@ R='HKCU\Software\Wine\Fonts\Replacements'
 ```
 
 The printing and font settings match what current OuDedetai sets on install; they're here for
-prefixes made by older versions.
-
-To also try the FFmpeg decoders: `"$WINE" reg add 'HKCU\Software\Wine\MediaFoundation' /v DisableGstDecoders /t REG_DWORD /d 1 /f`
-(`/d 0` goes back to GStreamer). To go back to Wine's own Direct3D: `dxvk-uninstall` the same way as `dxvk-install`.
+prefixes made by older versions. To also try the FFmpeg decoders:
+`"$WINE" reg add 'HKCU\Software\Wine\MediaFoundation' /v DisableGstDecoders /t REG_DWORD /d 1 /f`
+(`/d 0` goes back to GStreamer). `"$WINE" dxvk-uninstall` goes back to Wine's own Direct3D.
 
 ## Reporting problems
 
