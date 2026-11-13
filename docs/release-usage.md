@@ -99,9 +99,9 @@ R='HKCU\Software\Wine\Fonts\Replacements'
 ```
 
 The printing and font settings match what current OuDedetai sets on install; they're here for
-prefixes made by older versions. To also try the FFmpeg decoders:
-`"$WINE" reg add 'HKCU\Software\Wine\MediaFoundation' /v DisableGstDecoders /t REG_DWORD /d 1 /f`
-(`/d 0` goes back to GStreamer). `"$WINE" dxvk-uninstall` goes back to Wine's own Direct3D.
+prefixes made by older versions. To compare with GStreamer decoding:
+`"$WINE" reg add 'HKCU\Software\Wine\MediaFoundation' /v DisableGstDecoders /t REG_DWORD /d 0 /f`
+(`/d 1` goes back to FFmpeg). `"$WINE" dxvk-uninstall` goes back to Wine's own Direct3D.
 
 ## Reporting problems
 
