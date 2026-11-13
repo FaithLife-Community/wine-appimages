@@ -69,6 +69,18 @@ make Logos's own updates safe under Wine:
 OuDedetai sets this up and lets Logos update itself only when it sees an `(oinos)` Wine;
 with any other Wine it keeps suppressing Logos's application updates.
 
+## Search and indexing
+
+Logos's indexer has been checked against Windows on the same Logos account and library (143
+resources): the index it builds under this Wine is the same size, it logs the same 22
+warnings line for line (all data issues inside particular resources, not Wine), and ten test
+searches (Bible, morph, library, headings) give identical result counts. Wine adds about 1%
+overhead to indexing. So search results can be trusted.
+
+If search finds nothing after OuDedetai's "Remove all index files", start Logos once before
+running indexing: that action also removes the library catalog, which the indexer needs and
+Logos rebuilds when it starts.
+
 ## Quick setup for testers
 
 Switches an existing OuDedetai install to this build and sets its prefix up in one go:
