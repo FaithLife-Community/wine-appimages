@@ -71,10 +71,12 @@ with any other Wine it keeps suppressing Logos's application updates.
 
 Sets up an existing OuDedetai prefix for this build in one go: DXVK (or OpenGL where the
 GPU can't run it), the FFmpeg media source, the Logos update setting and printing. Close Logos
-first, then set `WINE` to this build (the AppImage, or the tarball's `bin/wine`):
+first; the first line assumes the AppImage was saved to `~/Downloads` (for the tarball,
+use the line in its comment):
 
 ```bash
-WINE=~/Downloads/wine-custom_….AppImage      # or: WINE=~/wine-custom_…/bin/wine
+WINE=~/Downloads/@NAME@.AppImage      # or the tarball's: WINE=~/@NAME@/bin/wine
+chmod +x "$WINE"
 export WINEPREFIX=~/.local/share/FaithLife-Community/oudedetai/data/wine64_bottle
 if [[ $WINE == *.AppImage ]]; then DXVK_INSTALL=("$WINE" dxvk-install); else DXVK_INSTALL=("$(dirname "$WINE")/dxvk-install"); fi
 "${DXVK_INSTALL[@]}"; case $? in 0) echo "Renderer: DXVK";; 3) echo "Renderer: OpenGL (no Vulkan 1.4 for DXVK)";; *) echo "dxvk-install failed";; esac

@@ -52,4 +52,5 @@ fi
 echo
 echo "# Usage"
 echo
-cat "$HERE/../docs/release-usage.md"
+# @NAME@ in the guide becomes this build's file name (without extension).
+sed "s/@NAME@/${NAME}/g" "$HERE/../docs/release-usage.md"
