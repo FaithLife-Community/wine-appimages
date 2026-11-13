@@ -75,6 +75,8 @@ Switches an existing OuDedetai install to this build and sets its prefix up in o
 DXVK (or OpenGL where the GPU can't run it), the FFmpeg media source, the Logos update
 setting and printing. Close Logos first. It assumes the AppImage was saved to `~/Downloads`
 and OuDedetai is installed in its default folder (otherwise change the first two lines).
+With the tarball instead, skip the `--set-appimage` line and set `WINE` to the `bin/wine`
+inside the extracted folder; the rest works for both.
 
 ```bash
 APPIMAGE=~/Downloads/@NAME@.AppImage
@@ -83,7 +85,9 @@ OUD=~/.local/share/FaithLife-Community/oudedetai
 WINE="$OUD/data/bin/wine"
 export WINEPREFIX="$OUD/data/wine64_bottle"
 "$WINE" --version                               # should say: wine-11.21 (oinos)
-"$WINE" dxvk-install
+# The tarball has dxvk-install next to bin/wine; the AppImage runs it as "wine dxvk-install"
+TOOL="$(dirname "$(readlink -f "$WINE")")/dxvk-install"
+if [ -x "$TOOL" ]; then "$TOOL"; else "$WINE" dxvk-install; fi
 case $? in 0) echo "Renderer: DXVK" ;; 3) echo "Renderer: OpenGL (no Vulkan 1.4 for DXVK)" ;; *) echo "dxvk-install failed" ;; esac
 "$WINE" reg add 'HKCU\Software\Wine\MediaFoundation' /v DisableGstByteStreamHandler /t REG_DWORD /d 1 /f
 "$WINE" reg add 'HKCU\Software\Wine\MSI' /v IgnoreFailedActions /t REG_MULTI_SZ /d RegisterStubMsixPackage /f
