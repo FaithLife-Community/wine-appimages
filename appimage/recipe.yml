@@ -144,6 +144,25 @@ AppDir:
      for f in selawk selawkb selawkl selawksb selawksl; do
        [ -f "$winefonts/$f.ttf" ] || { echo "missing bundled font $f.ttf" >&2; exit 1; }
      done
+     # Gelasio (Georgia metrics) and Source Sans 3 (Source Sans Pro renamed): fonts Logos's
+     # document templates use. Not packaged by Ubuntu, so take them from upstream git,
+     # pinned to a commit and by checksum.
+     gelasio=https://raw.githubusercontent.com/SorkinType/Gelasio/7ab20e7e5c42791e603b9ee3201a0b49849cfdb2/fonts/ttf
+     sourcesans=https://raw.githubusercontent.com/adobe-fonts/source-sans/87b37a2daaed80fcb8e8ccb0085c4d72ddade12e/TTF
+     for entry in \
+       48c797fbe0e07c48a18cb962e7bdfa23f19618327dddf54093265328dc9eb39d:$gelasio/Gelasio-Regular.ttf \
+       e0ef3addf1acf35f5c6aef2be00d0a2c01363bf70a5950e16650976051a0c462:$gelasio/Gelasio-Bold.ttf \
+       1d8bda4ff258bb8251eae4f7d7500c8d97d084136192bb264bc2305168765d1b:$gelasio/Gelasio-Italic.ttf \
+       aa87e21b46aef3dcb50a68dc6e1946f0c0a9819d067e4be6a98a6daa8f5b3c16:$gelasio/Gelasio-BoldItalic.ttf \
+       4644c81b86ec9caaa76b634889968ed3c4f4f52f054855933acc7c2b21e53b0f:$sourcesans/SourceSans3-Regular.ttf \
+       9214b9d95e4231c609802815c2646c98174e2102d0d37f88978a7f8e71006e6a:$sourcesans/SourceSans3-Bold.ttf \
+       192afd78f0f54a3c69eaf02d43f4d9a821e9d6110e41d3d25d61a7385cd580e4:$sourcesans/SourceSans3-It.ttf \
+       7978291fc1bf314db887e0366853b33c5cf2e964c7b95cfb9ce403a6ec46a842:$sourcesans/SourceSans3-BoldIt.ttf
+     do
+       sum=${entry%%:*} url=${entry#*:}
+       wget -q "$url" -O "$winefonts/${url##*/}"
+       echo "$sum  $winefonts/${url##*/}" | sha256sum -c - || exit 1
+     done
 
      cp fonts/LICENSE-*.txt "$winefonts"/
 

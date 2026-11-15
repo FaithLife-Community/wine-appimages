@@ -112,6 +112,9 @@ R='HKCU\Software\Wine\Fonts\Replacements'
 "$WINE" reg add "$R" /v "Courier New" /t REG_MULTI_SZ /d 'Liberation Mono\0Cousine\0Nimbus Mono PS' /f
 "$WINE" reg add "$R" /v "Microsoft Sans Serif" /t REG_MULTI_SZ /d 'Liberation Sans\0Arimo\0Nimbus Sans' /f
 "$WINE" reg add "$R" /v "Calibri" /t REG_MULTI_SZ /d 'Carlito\0Liberation Sans\0Arimo' /f
+"$WINE" reg add "$R" /v "Arial" /t REG_MULTI_SZ /d 'Liberation Sans\0Arimo\0DejaVu Sans' /f
+"$WINE" reg add "$R" /v "Georgia" /t REG_MULTI_SZ /d 'Gelasio\0Liberation Serif\0DejaVu Serif' /f
+"$WINE" reg add "$R" /v "Source Sans Pro" /t REG_MULTI_SZ /d 'Source Sans 3' /f
 "$WINE" wineserver -w
 ```
 
