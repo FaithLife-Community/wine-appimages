@@ -156,7 +156,7 @@ any branch; the build workflow enforces this and names the builds (see
 
 ### 16. windowscodecs: Don't close the GIF file twice when reading the frame headers fails (plus test)
 
-- **Problem:** since upstream decodes GIF frames on demand (c2f57082, Wine 11.11), a GIF
+- **Problem:** since upstream decodes GIF frames on demand (upstream c2f57082, June 2026), a GIF
   whose header is valid but whose frame headers are truncated or corrupt was closed twice:
   once when reading the headers failed and again when the decoder was destroyed. That
   corrupts the heap of whatever process decodes it (Logos decodes resource covers and
