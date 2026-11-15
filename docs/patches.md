@@ -154,6 +154,19 @@ any branch; the build workflow enforces this and names the builds (see
   stops the panel.
 - **Upstream:** not yet submitted; planned as a two-patch series, 15 first.
 
+### 16. windowscodecs: Don't close the GIF file twice when reading the frame headers fails (plus test)
+
+- **Problem:** since upstream decodes GIF frames on demand (c2f57082, Wine 11.11), a GIF
+  whose header is valid but whose frame headers are truncated or corrupt was closed twice:
+  once when reading the headers failed and again when the decoder was destroyed. That
+  corrupts the heap of whatever process decodes it (Logos decodes resource covers and
+  book images through WIC).
+- **Fix:** forget the closed file in `gif_decoder_initialize()`.
+- **Test:** `windowscodecs/tests/gifformat.c` decodes such a GIF 64 times. Without the fix,
+  a run with `WINEDEBUG=warn+heap` crashes in `DGifCloseFile`; with it, all 995 gifformat
+  tests pass. The expected result on Windows hasn't been checked yet.
+- **Upstream:** not yet submitted.
+
 Media playback also needs Wine built with FFmpeg: winedmo, Wine's FFmpeg-based media
 source, is what OuDedetai's `DisableGstByteStreamHandler=1` switches Logos to. The build
 bundles FFmpeg (see [building.md](building.md)); decoding still uses the host's
