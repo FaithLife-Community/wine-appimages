@@ -37,13 +37,13 @@ if [ -n "$repo" ] && base=$(gh api "repos/$repo/compare/master...$COMMIT" \
 	echo "On top of upstream Wine at \`${base%% *}\` (${base#* }). Every commit not in upstream, oldest first;"
 	echo "see [docs/patches.md](https://github.com/FaithLife-Community/wine-appimages/blob/main/docs/patches.md) for what each fixes and its upstream status."
 	echo
-	echo "| # | Commit | Change | Author |"
-	echo "|---|---|---|---|"
+	echo "| # | Commit | Change |"
+	echo "|---|---|---|"
 	gh api --paginate "repos/$repo/compare/master...$COMMIT?per_page=100" \
-		--jq '.commits[] | select(.parents | length == 1) | [.sha, (.commit.message | split("\n")[0]), .commit.author.name] | @tsv' |
+		--jq '.commits[] | select(.parents | length == 1) | [.sha, (.commit.message | split("\n")[0])] | @tsv' |
 	awk -F'\t' -v url="https://github.com/$repo/commit/" '{
 		gsub(/\|/, "\\|", $2)
-		printf "| %d | [`%s`](%s%s) | %s | %s |\n", NR, substr($1, 1, 9), url, $1, $2, $3
+		printf "| %d | [`%s`](%s%s) | %s |\n", NR, substr($1, 1, 9), url, $1, $2
 	}'
 else
 	echo "(Patch list unavailable: ${WINE_REPO} isn't a GitHub repository, or the GitHub API didn't answer.)"
