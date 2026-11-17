@@ -3,7 +3,8 @@
 #
 # Environment: WHAT ("Prerelease (beta) build", ...), VERSION (11.21), WINE_REPO (git URL),
 # BRANCH, COMMIT (full hash), NAME (file name without extension), DXVK_VERSION and
-# DXVK_REF (empty without DXVK), GH_TOKEN (for the GitHub API).
+# DXVK_REF (empty without DXVK), GH_TOKEN (for the GitHub API); optional RC (rc6) and
+# SINCE (the previous candidate's Wine commit) for a "Changes since" list.
 #
 # The patch table lists every commit on the branch that isn't on the Wine repository's
 # master branch (FaithLife-Community/wine's master mirrors upstream Wine), merges left
@@ -27,6 +28,20 @@ if [ -n "${DXVK_VERSION:-}" ]; then
 
 **DXVK:** both carry our DXVK \`${DXVK_VERSION}\` ([FaithLife-Community/dxvk](https://github.com/FaithLife-Community/dxvk) \`${DXVK_REF}\`). \`dxvk-install\` puts it into a prefix when the GPU has Vulkan 1.4, and otherwise sets Wine's OpenGL renderer (see the usage guide below).
 EOF
+fi
+
+if [ -n "${SINCE:-}" ] && [ -n "$repo" ]; then
+	prev="the previous build"
+	n=${RC#rc}
+	case "$n" in ''|*[!0-9]*) ;; *) [ "$n" -gt 1 ] && prev="rc$((n - 1))" ;; esac
+	echo
+	echo "## Changes since ${prev} (\`${SINCE:0:9}\`)"
+	echo
+	gh api --paginate "repos/$repo/compare/$SINCE...$COMMIT?per_page=100" \
+		--jq '.commits[] | select(.parents | length == 1) | [.sha, (.commit.message | split("\n")[0])] | @tsv' |
+	awk -F'\t' -v url="https://github.com/$repo/commit/" '{
+		printf "- %s ([`%s`](%s%s))\n", $2, substr($1, 1, 9), url, $1
+	} END { if (NR == 0) print "- No Wine changes." }'
 fi
 
 echo

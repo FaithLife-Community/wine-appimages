@@ -167,6 +167,21 @@ any branch; the build workflow enforces this and names the builds (see
   tests pass. The expected result on Windows hasn't been checked yet.
 - **Upstream:** not yet submitted.
 
+### 17. server: Update the PE image info for relocated executables on the server side (upstream backport)
+
+- **Problem:** since Wine 11.22 the server gives 64-bit programs a random address in
+  0x7ff600000000–0x7ff800000000, where Linux also puts its own libraries. When the chosen
+  address was already taken, the program was loaded elsewhere but still started at the
+  chosen address, so it crashed before running any code, at random and rarely (seen with
+  `reg.exe` during an OuDedetai install on Bazzite).
+- **Fix:** upstream `d87fb2f52ea9` (Alexandre Julliard), cherry-picked: the start address
+  comes from where the program actually ended up.
+- **Test:** an LD_PRELOAD library that fills that address range so the fallback happens every
+  time: every process crashed without the fix, none with it.
+- **Upstream:** fixed after 11.22 ([bug 60801](https://bugs.winehq.org/show_bug.cgi?id=60801));
+  drop it when moving to 11.23. The branch history also shows a temporary revert of
+  "ntdll: Randomize exe base addresses" and its undo, which cancel out.
+
 Media playback also needs Wine built with FFmpeg: winedmo, Wine's FFmpeg-based media
 source, is what OuDedetai's `DisableGstByteStreamHandler=1` switches Logos to. The build
 bundles FFmpeg (see [building.md](building.md)); decoding still uses the host's

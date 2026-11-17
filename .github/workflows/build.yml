@@ -47,6 +47,14 @@ on:
         description: "FaithLife-Community/dxvk branch, tag or commit to bundle (run '<AppImage> dxvk-install'); empty = no DXVK"
         default: "logos/combined"
         required: false
+      rc:
+        description: "Optional release candidate number for the title and notes (6 gives rc6); file names don't change"
+        default: ""
+        required: false
+      since:
+        description: "Optional Wine commit of the previous candidate; the notes then list the changes since it"
+        default: ""
+        required: false
 
 permissions:
   contents: write   # publish the release
@@ -384,6 +392,8 @@ jobs:
           IN_TYPE: ${{ inputs.release_type }}
           IN_WINE_REPO: ${{ inputs.wine_repo }}
           IN_DXVK_REF: ${{ inputs.dxvk_ref }}
+          IN_RC: ${{ inputs.rc }}
+          IN_SINCE: ${{ inputs.since }}
           DXVK_VERSION: ${{ needs.dxvk.outputs.version }}
           BRANCH: ${{ needs.wine.outputs.branch }}
           COMMIT: ${{ needs.wine.outputs.commit }}
@@ -407,10 +417,15 @@ jobs:
               prerelease=--prerelease
               what="Untested build" ;;
           esac
+          if [ -n "$IN_RC" ]; then
+            rc="rc${IN_RC#rc}"
+            title="${title/ (/ $rc (}"
+            what="$what $rc"
+          fi
           # Download guide, DXVK, the full patch table (commits not on the Wine repository's
           # master, i.e. not upstream) and the usage guide (docs/release-usage.md).
           WHAT="$what" WINE_REPO="$IN_WINE_REPO" DXVK_REF="$IN_DXVK_REF" \
-            build/release-notes.sh > notes.md
+            RC="${rc:-}" SINCE="$IN_SINCE" build/release-notes.sh > notes.md
           { echo "### Release notes"; head -c 3000 notes.md; } >> "$GITHUB_STEP_SUMMARY"
           # Only replace an earlier build with this tag while it is still a draft. A published
           # release may be what OuDedetai is offering users right now, so never delete it.
