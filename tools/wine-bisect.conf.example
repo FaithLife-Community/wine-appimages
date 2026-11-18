@@ -1,6 +1,9 @@
 # Optional. Everything below is already the default — uncomment only what you change.
 # Save as wine-bisect.conf next to wine-bisect.sh (e.g. in ~/wine-bisect-prefix).
 
+# What decides good or bad: a test in bisect-tests/ (`wine-bisect.sh tests` lists them)
+#TEST=logos-starts
+
 # Dedicated Wine clone used only for bisecting (created by `wine-bisect.sh setup`)
 #WINE_SRC="$HOME/Documents/GitHub/wine-mirror"
 #UPSTREAM_URL="https://gitlab.winehq.org/wine/wine.git"   # or https://github.com/wine-mirror/wine.git
@@ -24,11 +27,20 @@
 #   export CC="ccache gcc" x86_64_CC="ccache x86_64-w64-mingw32-gcc" i386_CC="ccache i686-w64-mingw32-gcc"
 #CONFIGURE_ARGS=(--enable-archs=i386,x86_64 --disable-tests)
 
-#LAUNCH_WAIT=60
-#REQUIRE_WINDOW=1          # needs xdotool
-#WINDOW_REGEX='Logos'
 #RUNS=2                    # a step is bad only if every attempt fails
 #EXTRA_ENV=(WINEDEBUG=-all "WINEDLLOVERRIDES=winemenubuilder.exe=d")
 # Extra env for the wineboot -u prefix update only (no Mono/Gecko install prompts):
 #WINEBOOT_ENV=("WINEDLLOVERRIDES=mscoree=;mshtml=;winemenubuilder.exe=d")
-#USE_XVFB=0                # 1 = keep Logos windows off your desktop
+#USE_XVFB=0                # 1 = keep test windows off your desktop
+
+# --- logos-starts settings (full list at the top of bisect-tests/logos-starts.sh)
+#LAUNCH_WAIT=60
+#REQUIRE_WINDOW=1          # needs xdotool
+#WINDOW_REGEX='Logos'
+
+# --- run-program settings (see bisect-tests/run-program.sh)
+#PROGRAM="$HOME/tests/dwrite_test.exe"
+#PROGRAM_ARGS=(font)
+#EXPECT_EXIT=0
+#EXPECT_REGEX=''
+#REJECT_REGEX=''
